@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Graphite: App Dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Graphite: Web Editor",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run dev:renderer",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Graphite: Tests",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run test",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
