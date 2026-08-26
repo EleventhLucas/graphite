@@ -315,13 +315,18 @@ export default function App() {
 
   const openChosenVault = async () => {
     if (!(await saveNow())) return;
-    const selected = await bridge.chooseVault();
-    if (selected) {
-      setRecentVaults((current) => [
-        selected,
-        ...current.filter((item) => item.id !== selected.id),
-      ]);
-      await activateVault(selected);
+    setError(null);
+    try {
+      const selected = await bridge.chooseVault();
+      if (selected) {
+        setRecentVaults((current) => [
+          selected,
+          ...current.filter((item) => item.id !== selected.id),
+        ]);
+        await activateVault(selected);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Folder access is unavailable.");
     }
   };
 
@@ -454,10 +459,7 @@ export default function App() {
             </p>
           </div>
           <div className="welcome-actions">
-            <Button
-              onClick={() => void openChosenVault()}
-              disabled={busy || !capabilities.canAccessVaults}
-            >
+            <Button onClick={() => void openChosenVault()} disabled={busy}>
               <FolderOpen size={16} /> Open folder as vault
             </Button>
             <Button

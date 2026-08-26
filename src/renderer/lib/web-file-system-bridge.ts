@@ -100,11 +100,14 @@ function base64ForBlob(blob: Blob): Promise<string> {
 }
 
 export function createWebFileSystemBridge(): GraphiteBridge {
-  const supported =
-    typeof window.showDirectoryPicker === "function" && window.isSecureContext !== false;
-  const limitation = supported
-    ? undefined
-    : "Local vault access requires desktop Microsoft Edge or Google Chrome in a secure context.";
+  const secure = window.isSecureContext !== false;
+  const hasDirectoryPicker = typeof window.showDirectoryPicker === "function";
+  const supported = secure && hasDirectoryPicker;
+  const limitation = !secure
+    ? "This page is not in a secure context. Open Graphite at http://127.0.0.1:5173 or over HTTPS."
+    : !hasDirectoryPicker
+      ? "This browser view does not expose local-folder access. Open Graphite directly in desktop Microsoft Edge or Google Chrome, not an embedded preview."
+      : undefined;
   const records = new Map<string, WebVaultRecord>();
   const listeners = new Set<ChangeListener>();
   const writeQueues = new Map<string, Promise<void>>();
