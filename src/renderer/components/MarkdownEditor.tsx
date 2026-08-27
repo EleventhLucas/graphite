@@ -4,27 +4,30 @@ import { EditorView, keymap } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
+import { wysiwygExtension } from "../lib/wysiwyg";
 
 interface MarkdownEditorProps {
   value: string;
   onChange(value: string): void;
   dark: boolean;
   disabled?: boolean;
+  mode: "source" | "wysiwyg";
 }
 
-export function MarkdownEditor({ value, onChange, dark, disabled }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, dark, disabled, mode }: MarkdownEditorProps) {
   const extensions = useMemo(
     () => [
       markdown(),
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
+      ...(mode === "wysiwyg" ? wysiwygExtension : []),
     ],
-    [],
+    [mode],
   );
   return (
     <CodeMirror
-      aria-label="Markdown source"
+      aria-label={mode === "wysiwyg" ? "Inline Markdown editor" : "Markdown code editor"}
       value={value}
       onChange={onChange}
       extensions={extensions}
@@ -37,7 +40,7 @@ export function MarkdownEditor({ value, onChange, dark, disabled }: MarkdownEdit
         foldGutter: false,
         highlightActiveLine: true,
         highlightSelectionMatches: true,
-        lineNumbers: true,
+        lineNumbers: mode === "source",
       }}
       height="100%"
       className="h-full overflow-hidden text-[14px]"

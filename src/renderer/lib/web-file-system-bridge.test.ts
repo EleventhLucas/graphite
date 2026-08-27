@@ -6,10 +6,10 @@ vi.mock("./web-vault-store", () => ({
   deleteWebVault: vi.fn(async () => undefined),
   listWebVaults: vi.fn(async () => []),
   loadWebPreferences: vi.fn(() => ({
-    theme: "system",
+    theme: "light",
     sidebarVisible: true,
-    editorVisible: true,
-    previewVisible: true,
+    primaryView: "source",
+    sidePreviewVisible: true,
     sidebarWidth: 248,
     editorRatio: 0.5,
     lastNoteByVault: {},
@@ -183,5 +183,40 @@ describe("web file-system bridge", () => {
     });
     const bridge = createWebFileSystemBridge();
     await expect(bridge.chooseVault()).resolves.toBeNull();
+  });
+
+  it("opens an editable built-in sandbox without local-folder support", async () => {
+    Object.defineProperty(window, "showDirectoryPicker", {
+      configurable: true,
+      value: undefined,
+    });
+    const bridge = createWebFileSystemBridge();
+    const vault = await bridge.openSandboxVault();
+
+    expect(vault).toMatchObject({ name: "Graphite Sandbox", sandbox: true });
+    const tree = await bridge.scanVault(vault.id);
+    expect(tree.some((entry) => entry.path === "Home.md")).toBe(true);
+    expect(tree.some((entry) => entry.name === ".hidden.md")).toBe(false);
+    await expect(bridge.readAsset(vault.id, "Attachments/pixel.png")).resolves.toMatchObject({
+      status: "ok",
+      mimeType: "image/png",
+    });
+
+    const home = await bridge.readDocument(vault.id, "Home.md");
+    expect(home.newline).toBe("crlf");
+    const result = await bridge.saveDocument(
+      vault.id,
+      home.path,
+      `${home.text}\nEdited in the browser sandbox.`,
+      home.revision,
+    );
+    expect(result.status).toBe("saved");
+
+    const resetVault = await bridge.openSandboxVault(true);
+    const resetHome = await bridge.readDocument(resetVault.id, "Home.md");
+    expect(resetHome.text).not.toContain("Edited in the browser sandbox.");
+
+    await expect(bridge.trashEntry(resetVault.id, "Notes/Welcome.md")).resolves.toBe(true);
+    await expect(bridge.readDocument(resetVault.id, "Notes/Welcome.md")).rejects.toThrow();
   });
 });

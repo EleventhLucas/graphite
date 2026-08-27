@@ -6,6 +6,7 @@ import type {
   VaultSummary,
 } from "../shared/contracts";
 import { PreferencesStore } from "./preferences";
+import { ensureSandboxVault } from "./sandbox-vault";
 import { VaultService } from "./vault-service";
 
 const preferences = new PreferencesStore();
@@ -61,12 +62,18 @@ rpc = BrowserView.defineRPC<GraphiteRPC>({
         if (!parent) return null;
         return activateVault(await vaults.createRoot(parent, name));
       },
+      openSandboxVault: async ({ reset }) => {
+        const root = await ensureSandboxVault(Utils.paths.userData, reset);
+        const summary = { ...(await vaults.openRoot(root)), sandbox: true };
+        return activateVault(summary);
+      },
       openRecentVault: async ({ vaultId }) => {
         if (smokeVault?.id === vaultId) return smokeVault;
         const recent = preferences.snapshot().recentVaults.find((vault) => vault.id === vaultId);
         if (!recent) return null;
         try {
-          return activateVault(await vaults.openRoot(recent.displayPath));
+          const reopened = await vaults.openRoot(recent.displayPath);
+          return activateVault(recent.sandbox ? { ...reopened, sandbox: true } : reopened);
         } catch {
           await preferences.removeRecent(vaultId);
           return null;

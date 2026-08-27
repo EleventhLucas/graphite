@@ -37,6 +37,7 @@ const nativeBridge: GraphiteBridge = {
   bootstrap: () => rpc.request.bootstrap({}),
   chooseVault: () => rpc.request.chooseVault({}, { maxRequestTime: Infinity }),
   createVault: (name) => rpc.request.createVault({ name }, { maxRequestTime: Infinity }),
+  openSandboxVault: (reset) => rpc.request.openSandboxVault({ reset }),
   openRecentVault: (vaultId) => rpc.request.openRecentVault({ vaultId }),
   scanVault: (vaultId) => rpc.request.scanVault({ vaultId }),
   readDocument: (vaultId, path) => rpc.request.readDocument({ vaultId, path }),
@@ -79,7 +80,7 @@ tags: [graphite, demo]
 
 Graphite is a focused, local-first Markdown editor for your Obsidian vault.
 
-- Edit in the source pane
+- Edit in Inline or Code mode
 - See the preview update instantly
 - Follow [[Getting Started]] links
 - Keep every note on your own machine
@@ -123,6 +124,7 @@ const demoBridge: GraphiteBridge = {
   }),
   chooseVault: async () => demoVault,
   createVault: async () => demoVault,
+  openSandboxVault: async () => demoVault,
   openRecentVault: async () => demoVault,
   scanVault: async () => demoTree,
   readDocument: async (_vaultId, path) => ({

@@ -10,6 +10,7 @@ import type {
 import { decodeMarkdown, encodeMarkdown } from "../../shared/encoding";
 import { mapMovedPath, resolveVaultLink, rewriteLinksForMove } from "../../shared/links";
 import { basename, dirname, extname, join } from "../../shared/posix-path";
+import { SANDBOX_VAULT_ID, SANDBOX_VAULT_NAME } from "../../shared/sandbox-vault";
 import {
   entryKindForPath,
   isHiddenPath,
@@ -18,6 +19,7 @@ import {
   validateEntryName,
 } from "../../shared/paths";
 import type { ChangeListener, GraphiteBridge } from "./bridge-contract";
+import { createMemorySandboxDirectory } from "./memory-file-system";
 import {
   deleteWebVault,
   listWebVaults,
@@ -265,6 +267,30 @@ export function createWebFileSystemBridge(): GraphiteBridge {
     return summaryForWebVault(record);
   };
 
+  const sandboxRecord = (): WebVaultRecord => {
+    const existing = records.get(SANDBOX_VAULT_ID);
+    if (existing) return existing;
+    const record: WebVaultRecord = {
+      id: SANDBOX_VAULT_ID,
+      name: SANDBOX_VAULT_NAME,
+      handle: createMemorySandboxDirectory(),
+      lastOpenedAt: Date.now(),
+    };
+    records.set(record.id, record);
+    return record;
+  };
+
+  const summaryForRecord = (record: WebVaultRecord): VaultSummary =>
+    record.id === SANDBOX_VAULT_ID
+      ? {
+          id: record.id,
+          name: record.name,
+          displayPath: "Built-in safe working copy",
+          lastOpenedAt: record.lastOpenedAt,
+          sandbox: true,
+        }
+      : summaryForWebVault(record);
+
   const readDocument = async (vaultId: string, path: string): Promise<DocumentSnapshot> => {
     const handle = await fileHandleFor(vaultId, path);
     const file = await handle.getFile();
@@ -435,12 +461,14 @@ export function createWebFileSystemBridge(): GraphiteBridge {
       limitation,
     },
     bootstrap: async () => {
+      const preferences = loadWebPreferences();
       if (supported) {
         for (const record of await listWebVaults().catch(() => [])) records.set(record.id, record);
       }
+      if (preferences.lastVaultId === SANDBOX_VAULT_ID) sandboxRecord();
       return {
-        recentVaults: [...records.values()].map(summaryForWebVault),
-        preferences: loadWebPreferences(),
+        recentVaults: [...records.values()].map(summaryForRecord),
+        preferences,
       };
     },
     chooseVault: async () => {
@@ -470,7 +498,20 @@ export function createWebFileSystemBridge(): GraphiteBridge {
         throw error;
       }
     },
+    openSandboxVault: async (reset = false) => {
+      if (reset) records.delete(SANDBOX_VAULT_ID);
+      const record = sandboxRecord();
+      record.lastOpenedAt = Date.now();
+      setActive(record.id);
+      return summaryForRecord(record);
+    },
     openRecentVault: async (vaultId, interactive = false) => {
+      if (vaultId === SANDBOX_VAULT_ID) {
+        const record = sandboxRecord();
+        record.lastOpenedAt = Date.now();
+        setActive(record.id);
+        return summaryForRecord(record);
+      }
       requireSupport();
       const record = records.get(vaultId);
       if (!record) return null;
@@ -567,8 +608,13 @@ export function createWebFileSystemBridge(): GraphiteBridge {
         normalizeVaultPath(join(destinationFolder, basename(clean))),
       );
     },
-    trashEntry: async () => {
-      throw new Error("Web Graphite cannot access the operating system trash.");
+    trashEntry: async (vaultId, path) => {
+      if (vaultId !== SANDBOX_VAULT_ID) {
+        throw new Error("Web Graphite cannot access the operating system trash.");
+      }
+      const { parent, name } = await parentAndName(vaultId, path);
+      await parent.removeEntry(name, { recursive: true });
+      return true;
     },
     resolveLink: async (vaultId, sourcePath, target) => {
       const paths = flattenTree(await scanTree(vaultId))

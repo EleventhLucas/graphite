@@ -1,14 +1,20 @@
 import {
   Check,
-  ChevronsLeft,
   CircleAlert,
+  CodeXml,
+  Eye,
+  FilePenLine,
   FilePlus2,
+  FlaskConical,
   FolderOpen,
   FolderPlus,
   LoaderCircle,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  RotateCcw,
   Search,
   Sun,
 } from "lucide-react";
@@ -23,6 +29,7 @@ import type {
   VaultTreeNode,
 } from "../shared/contracts";
 import { DEFAULT_PREFERENCES } from "../shared/contracts";
+import { SANDBOX_START_NOTE } from "../shared/sandbox-vault";
 import { Button } from "./components/Button";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { MarkdownEditor } from "./components/MarkdownEditor";
@@ -30,6 +37,7 @@ import { MarkdownPreview } from "./components/MarkdownPreview";
 import { QuickOpen } from "./components/QuickOpen";
 import { VaultTree } from "./components/VaultTree";
 import { bridge } from "./lib/bridge";
+import { calculateSplitRatio } from "./lib/panes";
 
 function containsPath(nodes: VaultTreeNode[], path: string): boolean {
   return nodes.some((node) => node.path === path || containsPath(node.children ?? [], path));
@@ -45,11 +53,14 @@ function mapMoved(path: string, from: string, to: string): string {
   return path.startsWith(`${from}/`) ? `${to}${path.slice(from.length)}` : path;
 }
 
-function resolvedDarkTheme(preference: AppPreferences["theme"]): boolean {
-  return (
-    preference === "dark" ||
-    (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
-  );
+const VIEW_MODES = [
+  { value: "wysiwyg" as const, label: "Inline", icon: FilePenLine },
+  { value: "source" as const, label: "Code", icon: CodeXml },
+  { value: "preview" as const, label: "Preview", icon: Eye },
+];
+
+function documentName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 export default function App() {
@@ -168,6 +179,8 @@ export default function App() {
       setBusy(true);
       setVault(nextVault);
       vaultRef.current = nextVault;
+      snapshotRef.current = null;
+      draftRef.current = "";
       setSnapshot(null);
       setDraft("");
       setSaveStatus("idle");
@@ -234,16 +247,10 @@ export default function App() {
   }, [preferences, preferencesReady]);
 
   useEffect(() => {
-    const query = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const value = resolvedDarkTheme(preferences.theme);
-      setDark(value);
-      document.documentElement.classList.toggle("dark", value);
-      document.documentElement.style.colorScheme = value ? "dark" : "light";
-    };
-    apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
+    const value = preferences.theme === "dark";
+    setDark(value);
+    document.documentElement.classList.toggle("dark", value);
+    document.documentElement.style.colorScheme = value ? "dark" : "light";
   }, [preferences.theme]);
 
   useEffect(() => {
@@ -341,6 +348,27 @@ export default function App() {
     }
   };
 
+  const openSandboxVault = async (reset = false) => {
+    if (!(await saveNow())) return;
+    if (reset && !confirm("Reset the sandbox and discard every change made in its working copy?")) {
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const selected = await bridge.openSandboxVault(reset);
+      setRecentVaults((current) => [
+        selected,
+        ...current.filter((item) => item.id !== selected.id),
+      ]);
+      await activateVault(selected, SANDBOX_START_NOTE);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The sandbox vault could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createNote = async (folder = folderOf(snapshot?.path)) => {
     if (!vault) return;
     if (!(await saveNow())) return;
@@ -404,7 +432,11 @@ export default function App() {
   };
 
   const trashEntry = async (node: VaultTreeNode) => {
-    if (!vault || !confirm(`Move “${node.name}” to the operating system trash?`)) return;
+    if (!vault) return;
+    const prompt = vault.sandbox
+      ? `Delete “${node.name}” from the sandbox working copy? Resetting the sandbox restores it.`
+      : `Move “${node.name}” to the operating system trash?`;
+    if (!confirm(prompt)) return;
     if (!(await saveNow())) return;
     if (await bridge.trashEntry(vault.id, node.path)) {
       if (
@@ -422,7 +454,7 @@ export default function App() {
   const toggleTheme = () => {
     setPreferences((current) => ({
       ...current,
-      theme: current.theme === "system" ? "dark" : current.theme === "dark" ? "light" : "system",
+      theme: current.theme === "dark" ? "light" : "dark",
     }));
   };
 
@@ -443,6 +475,13 @@ export default function App() {
     if (saveStatus === "error" || saveStatus === "conflict") return <CircleAlert size={13} />;
     return <Check size={13} />;
   }, [saveStatus]);
+  const viewModeIndex = Math.max(
+    0,
+    VIEW_MODES.findIndex((mode) => mode.value === preferences.primaryView),
+  );
+  const currentViewMode = VIEW_MODES[viewModeIndex];
+  const nextViewMode = VIEW_MODES[(viewModeIndex + 1) % VIEW_MODES.length];
+  const ViewModeIcon = currentViewMode.icon;
 
   if (!vault) {
     return (
@@ -455,7 +494,9 @@ export default function App() {
             <p className="welcome-copy">
               {capabilities.runtime === "web"
                 ? "Choose a local folder. Its contents stay on this device and are never uploaded."
-                : "A quiet, focused editor for the notes already on your machine."}
+                : capabilities.runtime === "unsupported"
+                  ? "Explore the built-in sandbox, or open Graphite in a browser with local-folder access."
+                  : "A quiet, focused editor for the notes already on your machine."}
             </p>
           </div>
           <div className="welcome-actions">
@@ -468,6 +509,9 @@ export default function App() {
               disabled={busy || !capabilities.canAccessVaults}
             >
               <FolderPlus size={16} /> Create vault
+            </Button>
+            <Button variant="ghost" onClick={() => void openSandboxVault()} disabled={busy}>
+              <FlaskConical size={16} /> Open sandbox vault
             </Button>
           </div>
           {capabilities.limitation && <p className="capability-note">{capabilities.limitation}</p>}
@@ -504,10 +548,21 @@ export default function App() {
       <header className="app-toolbar">
         <div className="toolbar-vault">
           <img src={graphiteIcon} alt="" />
-          <button type="button" onClick={() => void showVaultSwitcher()}>
+          <button className="vault-home" type="button" onClick={() => void showVaultSwitcher()}>
             <strong>{vault.name}</strong>
             <small>{snapshot?.path ?? "No note selected"}</small>
           </button>
+          {vault.sandbox && (
+            <Button
+              variant="ghost"
+              className="sandbox-reset"
+              aria-label="Reset Sandbox"
+              onClick={() => void openSandboxVault(true)}
+              title="Reset Sandbox"
+            >
+              <RotateCcw size={14} /> Reset Sandbox
+            </Button>
+          )}
         </div>
         <div className="toolbar-actions">
           <span className={`save-state save-${saveStatus}`}>
@@ -524,35 +579,44 @@ export default function App() {
           </Button>
           <Button
             variant="ghost"
-            size="icon"
+            className="mode-cycle-button"
+            aria-label={`Mode: ${currentViewMode.label}. Switch to ${nextViewMode.label}`}
             onClick={() =>
-              setPreferences((current) => ({
-                ...current,
-                editorVisible: !current.editorVisible || !current.previewVisible,
+              setPreferences((preferences) => ({
+                ...preferences,
+                primaryView: nextViewMode.value,
               }))
             }
-            title="Toggle source"
+            title={`Switch to ${nextViewMode.label}`}
           >
-            <ChevronsLeft size={16} />
+            <ViewModeIcon size={16} /> {currentViewMode.label}
           </Button>
+          <span className="toolbar-divider" aria-hidden="true" />
           <Button
             variant="ghost"
             size="icon"
+            aria-label={preferences.sidePreviewVisible ? "Hide side preview" : "Show side preview"}
+            aria-pressed={preferences.sidePreviewVisible}
             onClick={() =>
               setPreferences((current) => ({
                 ...current,
-                previewVisible: !current.previewVisible || !current.editorVisible,
+                sidePreviewVisible: !current.sidePreviewVisible,
               }))
             }
-            title="Toggle preview"
+            title={preferences.sidePreviewVisible ? "Hide side preview" : "Show side preview"}
           >
-            <FileTextIcon />
+            {preferences.sidePreviewVisible ? (
+              <PanelRightClose size={16} />
+            ) : (
+              <PanelRightOpen size={16} />
+            )}
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
-            title={`Theme: ${preferences.theme}`}
+            aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
+            title={`Switch to ${dark ? "light" : "dark"} theme`}
           >
             {dark ? <Moon size={16} /> : <Sun size={16} />}
           </Button>
@@ -596,7 +660,8 @@ export default function App() {
             <VaultTree
               nodes={tree}
               activePath={snapshot?.path}
-              canTrash={capabilities.canTrash}
+              canTrash={capabilities.canTrash || vault.sandbox === true}
+              trashLabel={vault.sandbox ? "Delete from sandbox" : undefined}
               onOpen={(node) =>
                 node.kind === "markdown"
                   ? void openDocument(node.path)
@@ -665,13 +730,26 @@ export default function App() {
               <p>Choose a note from the file tree or create a new one.</p>
             </div>
           ) : (
-            <div className="document-panes">
-              {preferences.editorVisible && (
-                <section
-                  className="document-pane editor-pane"
-                  style={{ flexBasis: `${preferences.editorRatio * 100}%` }}
-                >
-                  <div className="pane-title">Source</div>
+            <div
+              className="document-panes"
+              style={
+                preferences.sidePreviewVisible
+                  ? {
+                      gridTemplateColumns: `${preferences.editorRatio}fr 4px ${1 - preferences.editorRatio}fr`,
+                    }
+                  : undefined
+              }
+            >
+              <section className="document-pane primary-pane">
+                <div className="pane-title">{documentName(snapshot.path)}</div>
+                {preferences.primaryView === "preview" ? (
+                  <MarkdownPreview
+                    vaultId={vault.id}
+                    sourcePath={snapshot.path}
+                    markdown={draft}
+                    onOpenNote={(path) => void openDocument(path)}
+                  />
+                ) : (
                   <MarkdownEditor
                     value={draft}
                     onChange={(value) => {
@@ -680,13 +758,14 @@ export default function App() {
                     }}
                     dark={dark}
                     disabled={deleted}
+                    mode={preferences.primaryView}
                   />
-                </section>
-              )}
-              {preferences.editorVisible && preferences.previewVisible && (
+                )}
+              </section>
+              {preferences.sidePreviewVisible && (
                 <hr
                   className="resize-handle"
-                  aria-label="Resize source and preview panes"
+                  aria-label="Resize main view and side preview"
                   aria-orientation="vertical"
                   aria-valuemin={20}
                   aria-valuemax={80}
@@ -702,28 +781,37 @@ export default function App() {
                     }));
                   }}
                   onPointerDown={(event) => {
-                    const bounds = event.currentTarget.parentElement?.getBoundingClientRect();
+                    const handle = event.currentTarget;
+                    const bounds = handle.parentElement?.getBoundingClientRect();
                     if (!bounds) return;
+                    const handleBounds = handle.getBoundingClientRect();
+                    const grabOffset = event.clientX - handleBounds.left;
+                    handle.setPointerCapture(event.pointerId);
                     const move = (moveEvent: PointerEvent) =>
                       setPreferences((current) => ({
                         ...current,
-                        editorRatio: Math.max(
-                          0.2,
-                          Math.min(0.8, (moveEvent.clientX - bounds.left) / bounds.width),
+                        editorRatio: calculateSplitRatio(
+                          moveEvent.clientX,
+                          bounds.left,
+                          bounds.width,
+                          handleBounds.width,
+                          grabOffset,
                         ),
                       }));
                     const stop = () => {
-                      removeEventListener("pointermove", move);
-                      removeEventListener("pointerup", stop);
+                      handle.removeEventListener("pointermove", move);
+                      handle.removeEventListener("pointerup", stop);
+                      handle.removeEventListener("pointercancel", stop);
                     };
-                    addEventListener("pointermove", move);
-                    addEventListener("pointerup", stop);
+                    handle.addEventListener("pointermove", move);
+                    handle.addEventListener("pointerup", stop);
+                    handle.addEventListener("pointercancel", stop);
                   }}
                 />
               )}
-              {preferences.previewVisible && (
-                <section className="document-pane preview-pane">
-                  <div className="pane-title">Preview</div>
+              {preferences.sidePreviewVisible && (
+                <section className="document-pane preview-pane" aria-label="Side preview">
+                  <div className="pane-title">{documentName(snapshot.path)}</div>
                   <MarkdownPreview
                     vaultId={vault.id}
                     sourcePath={snapshot.path}
@@ -782,21 +870,5 @@ export default function App() {
         }}
       />
     </main>
-  );
-}
-
-function FileTextIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M4 4h16v16H4zM12 4v16" />
-    </svg>
   );
 }

@@ -1,5 +1,5 @@
 import type { AppPreferences, VaultSummary } from "../../shared/contracts";
-import { DEFAULT_PREFERENCES } from "../../shared/contracts";
+import { DEFAULT_PREFERENCES, normalizeAppPreferences } from "../../shared/contracts";
 
 const DATABASE_NAME = "graphite-web";
 const VAULT_STORE = "vaults";
@@ -73,24 +73,14 @@ export function loadWebPreferences(): AppPreferences {
     const stored = JSON.parse(
       localStorage.getItem(PREFERENCES_KEY) ?? "null",
     ) as Partial<AppPreferences> | null;
-    return {
-      ...DEFAULT_PREFERENCES,
-      ...stored,
-      lastNoteByVault: stored?.lastNoteByVault ?? {},
-    };
+    return normalizeAppPreferences(stored);
   } catch {
     return structuredClone(DEFAULT_PREFERENCES);
   }
 }
 
 export function saveWebPreferences(preferences: AppPreferences): AppPreferences {
-  const normalized: AppPreferences = {
-    ...DEFAULT_PREFERENCES,
-    ...preferences,
-    lastNoteByVault: preferences.lastNoteByVault ?? {},
-    sidebarWidth: Math.min(480, Math.max(180, preferences.sidebarWidth)),
-    editorRatio: Math.min(0.8, Math.max(0.2, preferences.editorRatio)),
-  };
+  const normalized = normalizeAppPreferences(preferences);
   localStorage.setItem(PREFERENCES_KEY, JSON.stringify(normalized));
   return normalized;
 }

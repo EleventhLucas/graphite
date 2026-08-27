@@ -21,6 +21,7 @@ interface VaultTreeProps {
   nodes: VaultTreeNode[];
   activePath?: string;
   canTrash: boolean;
+  trashLabel?: string;
   onOpen(node: VaultTreeNode): void;
   onCreateNote(folder: string): void;
   onCreateFolder(folder: string): void;
@@ -78,10 +79,10 @@ function TreeNode({
               <ChevronRight size={13} />
             )
           ) : (
-            <span className="w-[13px]" />
+            <span className="tree-icon-spacer" />
           )}
           <EntryIcon node={node} open={open} />
-          <span className="truncate">{node.name}</span>
+          <span className="tree-name">{node.name}</span>
         </button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -134,7 +135,7 @@ function TreeNode({
                     className="menu-item text-red-600"
                     onSelect={() => props.onTrash(node)}
                   >
-                    <Trash2 size={14} /> Move to trash
+                    <Trash2 size={14} /> {props.trashLabel ?? "Move to trash"}
                   </DropdownMenu.Item>
                 </>
               )}

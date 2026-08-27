@@ -22,7 +22,8 @@ export const SUPPORTED_EXTENSIONS = [
 
 export type VaultEntryKind = "folder" | "markdown" | "image" | "audio" | "video" | "pdf";
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
-export type ThemePreference = "system" | "light" | "dark";
+export type ThemePreference = "light" | "dark";
+export type PrimaryView = "wysiwyg" | "source" | "preview";
 export type VaultPath = string;
 type EmptyRecord = Record<never, never>;
 type RPCSchema<Schema extends { requests: object; messages: object }> = Schema;
@@ -32,6 +33,7 @@ export interface VaultSummary {
   name: string;
   displayPath: string;
   lastOpenedAt: number;
+  sandbox?: boolean;
 }
 
 export interface VaultTreeNode {
@@ -77,8 +79,8 @@ export interface VaultChangeEvent {
 export interface AppPreferences {
   theme: ThemePreference;
   sidebarVisible: boolean;
-  editorVisible: boolean;
-  previewVisible: boolean;
+  primaryView: PrimaryView;
+  sidePreviewVisible: boolean;
   sidebarWidth: number;
   editorRatio: number;
   lastVaultId?: string;
@@ -105,6 +107,7 @@ export type GraphiteRPC = {
       };
       chooseVault: { params: EmptyRecord; response: VaultSummary | null };
       createVault: { params: { name: string }; response: VaultSummary | null };
+      openSandboxVault: { params: { reset?: boolean }; response: VaultSummary };
       openRecentVault: { params: { vaultId: string }; response: VaultSummary | null };
       scanVault: { params: { vaultId: string }; response: VaultTreeNode[] };
       readDocument: { params: { vaultId: string; path: VaultPath }; response: DocumentSnapshot };
@@ -163,11 +166,42 @@ export type GraphiteRPC = {
 };
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
-  theme: "system",
+  theme: "light",
   sidebarVisible: true,
-  editorVisible: true,
-  previewVisible: true,
+  primaryView: "wysiwyg",
+  sidePreviewVisible: true,
   sidebarWidth: 248,
   editorRatio: 0.5,
   lastNoteByVault: {},
 };
+
+type LegacyPreferences = Omit<Partial<AppPreferences>, "theme"> & {
+  theme?: ThemePreference | "system";
+  editorVisible?: boolean;
+  previewVisible?: boolean;
+};
+
+export function normalizeAppPreferences(stored?: LegacyPreferences | null): AppPreferences {
+  const legacyPrimaryView: PrimaryView = !stored
+    ? DEFAULT_PREFERENCES.primaryView
+    : stored.editorVisible === false && stored.previewVisible !== false
+      ? "preview"
+      : "source";
+  const legacySidePreview = stored?.editorVisible !== false && stored?.previewVisible !== false;
+  const primaryView = new Set<PrimaryView>(["wysiwyg", "source", "preview"]).has(
+    stored?.primaryView as PrimaryView,
+  )
+    ? (stored?.primaryView as PrimaryView)
+    : legacyPrimaryView;
+
+  return {
+    theme: stored?.theme === "dark" ? "dark" : "light",
+    sidebarVisible: stored?.sidebarVisible ?? DEFAULT_PREFERENCES.sidebarVisible,
+    primaryView,
+    sidePreviewVisible: stored?.sidePreviewVisible ?? legacySidePreview,
+    sidebarWidth: Math.min(480, Math.max(180, stored?.sidebarWidth ?? 248)),
+    editorRatio: Math.min(0.8, Math.max(0.2, stored?.editorRatio ?? 0.5)),
+    lastVaultId: stored?.lastVaultId,
+    lastNoteByVault: stored?.lastNoteByVault ?? {},
+  };
+}

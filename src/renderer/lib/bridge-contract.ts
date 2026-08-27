@@ -25,6 +25,7 @@ export interface GraphiteBridge {
   bootstrap(): Promise<{ recentVaults: VaultSummary[]; preferences: AppPreferences }>;
   chooseVault(): Promise<VaultSummary | null>;
   createVault(name: string): Promise<VaultSummary | null>;
+  openSandboxVault(reset?: boolean): Promise<VaultSummary>;
   openRecentVault(vaultId: string, interactive?: boolean): Promise<VaultSummary | null>;
   scanVault(vaultId: string): Promise<VaultTreeNode[]>;
   readDocument(vaultId: string, path: string): Promise<DocumentSnapshot>;

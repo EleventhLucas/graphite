@@ -1,7 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { DEFAULT_PREFERENCES, type AppPreferences, type VaultSummary } from "../shared/contracts";
+import {
+  DEFAULT_PREFERENCES,
+  normalizeAppPreferences,
+  type AppPreferences,
+  type VaultSummary,
+} from "../shared/contracts";
 
 interface PersistedState {
   preferences: AppPreferences;
@@ -29,11 +34,7 @@ export class PreferencesStore {
     try {
       const stored = JSON.parse(await readFile(statePath(), "utf8")) as Partial<PersistedState>;
       this.state = {
-        preferences: {
-          ...DEFAULT_PREFERENCES,
-          ...stored.preferences,
-          lastNoteByVault: stored.preferences?.lastNoteByVault ?? {},
-        },
+        preferences: normalizeAppPreferences(stored.preferences),
         recentVaults: Array.isArray(stored.recentVaults) ? stored.recentVaults.slice(0, 10) : [],
       };
     } catch {
@@ -49,13 +50,7 @@ export class PreferencesStore {
   }
 
   async updatePreferences(preferences: AppPreferences): Promise<AppPreferences> {
-    this.state.preferences = {
-      ...DEFAULT_PREFERENCES,
-      ...preferences,
-      lastNoteByVault: preferences.lastNoteByVault ?? {},
-      sidebarWidth: Math.min(480, Math.max(180, preferences.sidebarWidth)),
-      editorRatio: Math.min(0.8, Math.max(0.2, preferences.editorRatio)),
-    };
+    this.state.preferences = normalizeAppPreferences(preferences);
     await this.persist();
     return structuredClone(this.state.preferences);
   }

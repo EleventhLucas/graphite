@@ -15,6 +15,8 @@ The web editor runs in desktop Microsoft Edge or Google Chrome. Choose a local f
 
 Once loaded, the production web build is cached as an installable PWA. The editor and its preview dependencies work offline. Vault content is never copied into the cache or uploaded to the host.
 
+The welcome screen can open the built-in sandbox without folder permission. Its canonical `sandbox-vault/` is committed for direct testing; Graphite edits a safe working copy, and `bun run sandbox:reset` restores the committed fixtures.
+
 To work on the Electrobun desktop build, run `bun run dev`. The first Electrobun command downloads its pinned, checksum-verified 2.0.1 toolchain. Windows builds also require CMake and Visual Studio 2022 Build Tools with **Desktop development with C++**. Linux builds require the Electrobun GTK/WebKitGTK development packages documented upstream.
 
 ## Commands
@@ -24,6 +26,7 @@ bun run dev              Full desktop app
 bun run dev:web          Web editor with direct local-folder access
 bun run dev:renderer     Alias for the web editor
 bun run build:web        Production PWA in src/renderer/dist
+bun run sandbox:reset    Restore the committed sandbox-vault fixtures
 bun run typecheck        TypeScript validation
 bun run lint             Biome lint
 bun run format:check     Formatting check
