@@ -87,6 +87,10 @@ button {
   border-radius: 7px;
 }
 
+:root:not(.dark) .toolbar-vault .graphite-brand-icon {
+  filter: invert(1);
+}
+
 .vault-home {
   min-width: 0;
   flex-direction: column;
@@ -733,6 +737,10 @@ button {
   height: 112px;
   border-radius: 25px;
   filter: drop-shadow(0 18px 26px rgb(0 0 0 / 0.28));
+}
+
+:root:not(.dark) .welcome-icon.graphite-brand-icon {
+  filter: invert(1) drop-shadow(0 18px 26px rgb(0 0 0 / 0.2));
 }
 
 .eyebrow {

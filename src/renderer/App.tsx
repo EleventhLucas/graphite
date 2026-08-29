@@ -19,7 +19,7 @@ import {
   Sun,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import graphiteIcon from "../../graphite_app.png";
+import graphiteIcon from "../../graphite_vector.svg";
 import type {
   AppPreferences,
   DocumentSnapshot,
@@ -487,7 +487,7 @@ export default function App() {
     return (
       <main className="welcome-shell">
         <section className="welcome-card">
-          <img src={graphiteIcon} alt="" className="welcome-icon" />
+          <img src={graphiteIcon} alt="" className="welcome-icon graphite-brand-icon" />
           <div>
             <p className="eyebrow">LOCAL MARKDOWN WORKSPACE</p>
             <h1>Graphite</h1>
@@ -547,7 +547,7 @@ export default function App() {
     <main className="app-shell">
       <header className="app-toolbar">
         <div className="toolbar-vault">
-          <img src={graphiteIcon} alt="" />
+          <img src={graphiteIcon} alt="" className="graphite-brand-icon" />
           <button className="vault-home" type="button" onClick={() => void showVaultSwitcher()}>
             <strong>{vault.name}</strong>
             <small>{snapshot?.path ?? "No note selected"}</small>
