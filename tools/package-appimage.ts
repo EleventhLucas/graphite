@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const icon = resolve(root, "src", "renderer", "public", "graphite_app.png");
 const staging = resolve(root, "build", "appimage", "Graphite.AppDir");
 const output = resolve(root, "artifacts", "Graphite-0.1.0-x86_64.AppImage");
 
@@ -79,9 +80,9 @@ await copyFile(
   resolve(staging, "graphite.desktop"),
   resolve(staging, "usr", "share", "applications", "graphite.desktop"),
 );
-await copyFile(resolve(root, "graphite_app.png"), resolve(staging, "graphite.png"));
+await copyFile(icon, resolve(staging, "graphite.png"));
 await copyFile(
-  resolve(root, "graphite_app.png"),
+  icon,
   resolve(staging, "usr", "share", "icons", "hicolor", "512x512", "apps", "graphite.png"),
 );
 

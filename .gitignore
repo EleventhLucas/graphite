@@ -4,6 +4,7 @@ PLAN.md
 .env.*
 !.env.example
 .hutch/
+.cottontail-tmp/
 .tmp-electrobun/
 node_modules/
 dist/

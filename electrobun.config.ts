@@ -19,7 +19,7 @@ export default {
     mac: { bundleCEF: false },
     linux: {
       bundleCEF: false,
-      icon: "graphite_app.png",
+      icon: "src/renderer/public/graphite_app.png",
     },
     win: {
       bundleCEF: false,

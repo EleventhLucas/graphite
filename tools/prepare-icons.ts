@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import pngToIco from "png-to-ico";
 
 const root = resolve(import.meta.dirname, "..");
-const source = resolve(root, "graphite_app.png");
+const source = resolve(root, "src", "renderer", "public", "graphite_app.png");
 const assets = resolve(root, "assets");
 
 await mkdir(assets, { recursive: true });
