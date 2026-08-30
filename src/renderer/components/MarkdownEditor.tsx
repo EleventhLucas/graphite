@@ -1,6 +1,7 @@
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView, keymap } from "@codemirror/view";
+import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
@@ -17,7 +18,7 @@ interface MarkdownEditorProps {
 export function MarkdownEditor({ value, onChange, dark, disabled, mode }: MarkdownEditorProps) {
   const extensions = useMemo(
     () => [
-      markdown(),
+      markdown({ extensions: GFM }),
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,

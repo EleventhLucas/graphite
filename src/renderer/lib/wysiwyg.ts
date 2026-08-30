@@ -9,6 +9,7 @@ const STYLED_NODES: Record<string, string> = {
   ATXHeading4: "cm-live-heading cm-live-heading-4",
   ATXHeading5: "cm-live-heading cm-live-heading-5",
   ATXHeading6: "cm-live-heading cm-live-heading-6",
+  Autolink: "cm-live-link",
   Blockquote: "cm-live-blockquote",
   Emphasis: "cm-live-emphasis",
   FencedCode: "cm-live-code-block",
@@ -34,8 +35,58 @@ interface FrontmatterRange {
   entries: Array<[string, string]>;
 }
 
+interface TableData {
+  headers: string[];
+  alignments: Array<"left" | "center" | "right">;
+  rows: string[][];
+}
+
 function selectionInside(state: EditorState, from: number, to: number): boolean {
-  return state.selection.ranges.some((selection) => selection.head >= from && selection.head <= to);
+  return state.selection.ranges.some((selection) => selection.from <= to && selection.to >= from);
+}
+
+function splitTableRow(value: string): string[] {
+  const trimmed = value.trim();
+  const cells: string[] = [];
+  let cell = "";
+  let escaped = false;
+  for (const character of trimmed) {
+    if (character === "|" && !escaped) {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+    escaped = character === "\\" && !escaped;
+    if (character !== "\\") escaped = false;
+  }
+  cells.push(cell.trim());
+  if (trimmed.startsWith("|")) cells.shift();
+  if (trimmed.endsWith("|")) cells.pop();
+  return cells;
+}
+
+function parseTable(value: string): TableData | null {
+  const lines = value.split("\n");
+  if (lines.length < 2) return null;
+  const headers = splitTableRow(lines[0]);
+  const delimiters = splitTableRow(lines[1]);
+  if (
+    headers.length === 0 ||
+    headers.length !== delimiters.length ||
+    !delimiters.every((cell) => /^:?-{3,}:?$/.test(cell))
+  ) {
+    return null;
+  }
+  return {
+    headers,
+    alignments: delimiters.map((cell) => {
+      if (cell.startsWith(":") && cell.endsWith(":")) return "center";
+      if (cell.endsWith(":")) return "right";
+      return "left";
+    }),
+    rows: lines.slice(2).map(splitTableRow),
+  };
 }
 
 function frontmatterIsActive(state: EditorState, range: FrontmatterRange): boolean {
@@ -183,13 +234,80 @@ class ListMarkerWidget extends WidgetType {
   }
 }
 
-function markerShouldRemainVisible(
-  state: EditorState,
-  name: string,
-  parentFrom: number,
-  parentTo: number,
-) {
-  if (["CodeMark", "HeaderMark", "QuoteMark"].includes(name)) return false;
+class TableWidget extends WidgetType {
+  constructor(
+    private readonly source: string,
+    private readonly from: number,
+    private readonly to: number,
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget) {
+    return other.source === this.source && other.from === this.from && other.to === this.to;
+  }
+
+  toDOM(view: EditorView) {
+    const data = parseTable(this.source);
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-live-table-widget";
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "button");
+    wrapper.setAttribute("aria-label", "Markdown table. Activate to edit its source.");
+
+    if (data) {
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const headingRow = document.createElement("tr");
+      data.headers.forEach((value, index) => {
+        const cell = document.createElement("th");
+        cell.textContent = value;
+        cell.style.textAlign = data.alignments[index] ?? "left";
+        headingRow.append(cell);
+      });
+      head.append(headingRow);
+      table.append(head);
+
+      if (data.rows.length) {
+        const body = document.createElement("tbody");
+        for (const values of data.rows) {
+          const row = document.createElement("tr");
+          data.headers.forEach((_, index) => {
+            const cell = document.createElement("td");
+            cell.textContent = values[index] ?? "";
+            cell.style.textAlign = data.alignments[index] ?? "left";
+            row.append(cell);
+          });
+          body.append(row);
+        }
+        table.append(body);
+      }
+      wrapper.append(table);
+    }
+
+    const edit = () => {
+      view.dispatch({
+        selection: { anchor: Math.min(this.from + 2, this.to) },
+        scrollIntoView: true,
+      });
+      view.focus();
+    };
+    wrapper.addEventListener("mousedown", (event) => event.preventDefault());
+    wrapper.addEventListener("click", edit);
+    wrapper.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      edit();
+    });
+    return wrapper;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+function markerShouldRemainVisible(state: EditorState, parentFrom: number, parentTo: number) {
   return selectionInside(state, parentFrom, parentTo);
 }
 
@@ -229,13 +347,63 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
         return false;
       }
 
+      if (node.name === "Table") {
+        const source = state.doc.sliceString(node.from, node.to);
+        if (!selectionInside(state, node.from, node.to) && parseTable(source)) {
+          decorations.push(
+            Decoration.replace({
+              widget: new TableWidget(source, node.from, node.to),
+              block: true,
+            }).range(node.from, node.to),
+          );
+          return false;
+        }
+        const first = state.doc.lineAt(node.from).number;
+        const last = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
+        for (let number = first; number <= last; number += 1) {
+          const line = state.doc.line(number);
+          const kind = number === first ? "header" : number === first + 1 ? "delimiter" : "body";
+          decorations.push(
+            Decoration.line({
+              attributes: { class: `cm-live-table-line cm-live-table-${kind}` },
+            }).range(line.from),
+          );
+        }
+      }
+
+      if (node.name === "HorizontalRule") {
+        const line = state.doc.lineAt(node.from);
+        decorations.push(
+          Decoration.line({ attributes: { class: "cm-live-hr-line" } }).range(line.from),
+        );
+        if (!selectionInside(state, node.from, node.to)) {
+          decorations.push(Decoration.replace({}).range(node.from, node.to));
+        }
+        return false;
+      }
+
       const className = STYLED_NODES[node.name];
       if (className) {
         decorations.push(Decoration.mark({ class: className }).range(node.from, node.to));
       }
 
-      const lineClass = node.name.startsWith("ATXHeading")
-        ? "cm-live-heading-line"
+      if (node.name === "Paragraph") {
+        const parentName = node.node.parent?.name;
+        if (parentName !== "ListItem") {
+          const first = state.doc.lineAt(node.from);
+          const last = state.doc.lineAt(Math.max(node.from, node.to - 1));
+          decorations.push(
+            Decoration.line({ attributes: { class: "cm-live-paragraph-start" } }).range(first.from),
+          );
+          decorations.push(
+            Decoration.line({ attributes: { class: "cm-live-paragraph-end" } }).range(last.from),
+          );
+        }
+      }
+
+      const headingLevel = node.name.startsWith("ATXHeading") ? node.name.at(-1) : undefined;
+      const lineClass = headingLevel
+        ? `cm-live-heading-line cm-live-heading-line-${headingLevel}`
         : node.name === "FencedCode"
           ? "cm-live-code-line"
           : node.name === "Blockquote"
@@ -249,7 +417,13 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
           const key = `${line.from}:${lineClass}`;
           if (decoratedLines.has(key)) continue;
           decoratedLines.add(key);
-          decorations.push(Decoration.line({ attributes: { class: lineClass } }).range(line.from));
+          const edges =
+            node.name === "FencedCode"
+              ? `${number === first ? " cm-live-code-start" : ""}${number === last ? " cm-live-code-end" : ""}`
+              : "";
+          decorations.push(
+            Decoration.line({ attributes: { class: `${lineClass}${edges}` } }).range(line.from),
+          );
         }
       }
 
@@ -270,6 +444,7 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
         const line = state.doc.lineAt(node.from);
         const task = /^\s*\[[ xX]\]/.test(state.doc.sliceString(node.to, line.to));
         const marker = state.doc.sliceString(node.from, node.to).trim();
+        if (!task && selectionInside(state, line.from, line.to)) return;
         decorations.push(
           Decoration.replace(task ? {} : { widget: new ListMarkerWidget(marker) }).range(
             node.from,
@@ -279,9 +454,15 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
         return;
       }
 
+      if (node.name === "TableCell") {
+        decorations.push(
+          Decoration.mark({ class: "cm-live-table-cell" }).range(node.from, node.to),
+        );
+      }
+
       if (HIDDEN_MARKERS.has(node.name)) {
         const parent = node.node.parent;
-        if (!parent || !markerShouldRemainVisible(state, node.name, parent.from, parent.to)) {
+        if (!parent || !markerShouldRemainVisible(state, parent.from, parent.to)) {
           decorations.push(Decoration.replace({}).range(node.from, node.to));
         }
       }

@@ -326,64 +326,66 @@ export function MarkdownPreview({
   const plugins = useMemo(() => [remarkFrontmatter, remarkGfm, remarkWikilinks], []);
   return (
     <div ref={container} className="markdown-preview">
-      <ReactMarkdown
-        remarkPlugins={plugins}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeHighlight]}
-        urlTransform={(url, key, node) => {
-          if (url.startsWith("graphite-wiki:") || url.startsWith("graphite-embed:")) return url;
-          if (/^https?:/i.test(url)) return url;
-          if (key === "src" && node.tagName === "img") {
-            return `graphite-embed:${encodeURIComponent(url)}`;
-          }
-          if (key === "href" && url) return `graphite-wiki:${encodeURIComponent(url)}`;
-          return "";
-        }}
-        components={{
-          a: ({ href = "", children }) => {
-            if (href.startsWith("graphite-wiki:")) {
-              return (
-                <WikiLink
-                  vaultId={vaultId}
-                  sourcePath={sourcePath}
-                  target={decodeGraphiteUrl(href, "graphite-wiki:")}
-                  onOpenNote={onOpenNote}
-                >
-                  {children}
-                </WikiLink>
-              );
+      <article className="markdown-preview-content">
+        <ReactMarkdown
+          remarkPlugins={plugins}
+          rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeHighlight]}
+          urlTransform={(url, key, node) => {
+            if (url.startsWith("graphite-wiki:") || url.startsWith("graphite-embed:")) return url;
+            if (/^https?:/i.test(url)) return url;
+            if (key === "src" && node.tagName === "img") {
+              return `graphite-embed:${encodeURIComponent(url)}`;
             }
-            if (/^https?:/i.test(href)) {
-              return (
-                <button
-                  className="external-link"
-                  type="button"
-                  onClick={() => void bridge.openExternal(href)}
-                >
-                  {children} <ExternalLink size={12} />
-                </button>
-              );
-            }
-            return <span>{children}</span>;
-          },
-          img: ({ src = "", alt = "" }) => {
-            if (src.startsWith("graphite-embed:")) {
-              return (
-                <Embed
-                  vaultId={vaultId}
-                  sourcePath={sourcePath}
-                  target={decodeGraphiteUrl(src, "graphite-embed:")}
-                  depth={depth}
-                  visited={visited}
-                  onOpenNote={onOpenNote}
-                />
-              );
-            }
-            return <span className="embed-fallback">Remote or unsafe image blocked: {alt}</span>;
-          },
-        }}
-      >
-        {markdown}
-      </ReactMarkdown>
+            if (key === "href" && url) return `graphite-wiki:${encodeURIComponent(url)}`;
+            return "";
+          }}
+          components={{
+            a: ({ href = "", children }) => {
+              if (href.startsWith("graphite-wiki:")) {
+                return (
+                  <WikiLink
+                    vaultId={vaultId}
+                    sourcePath={sourcePath}
+                    target={decodeGraphiteUrl(href, "graphite-wiki:")}
+                    onOpenNote={onOpenNote}
+                  >
+                    {children}
+                  </WikiLink>
+                );
+              }
+              if (/^https?:/i.test(href)) {
+                return (
+                  <button
+                    className="external-link"
+                    type="button"
+                    onClick={() => void bridge.openExternal(href)}
+                  >
+                    {children} <ExternalLink size={12} />
+                  </button>
+                );
+              }
+              return <span>{children}</span>;
+            },
+            img: ({ src = "", alt = "" }) => {
+              if (src.startsWith("graphite-embed:")) {
+                return (
+                  <Embed
+                    vaultId={vaultId}
+                    sourcePath={sourcePath}
+                    target={decodeGraphiteUrl(src, "graphite-embed:")}
+                    depth={depth}
+                    visited={visited}
+                    onOpenNote={onOpenNote}
+                  />
+                );
+              }
+              return <span className="embed-fallback">Remote or unsafe image blocked: {alt}</span>;
+            },
+          }}
+        >
+          {markdown}
+        </ReactMarkdown>
+      </article>
     </div>
   );
 }

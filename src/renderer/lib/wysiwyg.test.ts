@@ -3,6 +3,7 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { GFM } from "@lezer/markdown";
 import { describe, expect, it } from "vitest";
 import { buildWysiwygDecorations, wysiwygExtension } from "./wysiwyg";
 
@@ -10,7 +11,7 @@ function decorationSpecs(doc: string, cursor = 0) {
   const state = EditorState.create({
     doc,
     selection: { anchor: cursor },
-    extensions: [markdown()],
+    extensions: [markdown({ extensions: GFM })],
   });
   const found: Array<{
     from: number;
@@ -39,11 +40,59 @@ describe("Inline mode decorations", () => {
     expect(decorations.some((item) => item.from === 6 && item.to === 7)).toBe(true);
   });
 
-  it("keeps heading syntax concealed while its text is edited", () => {
+  it("reveals heading syntax while its text is edited", () => {
     const doc = "intro\n# Heading";
     const decorations = decorationSpecs(doc, doc.indexOf("Heading"));
     expect(decorations.some((item) => item.className?.includes("cm-live-heading-1"))).toBe(true);
-    expect(decorations.some((item) => item.from === 6 && item.to === 7)).toBe(true);
+    expect(decorations.some((item) => item.from === 6 && item.to === 7)).toBe(false);
+  });
+
+  it("uses GFM nodes for strikethrough and inactive table rendering", () => {
+    const doc = "~~removed~~\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
+    const decorations = decorationSpecs(doc);
+    expect(decorations.some((item) => item.className?.includes("cm-live-strikethrough"))).toBe(
+      true,
+    );
+    expect(decorations.some((item) => item.widget && item.block)).toBe(true);
+  });
+
+  it("reveals a table source when its cells are active", () => {
+    const doc = "intro\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
+    const decorations = decorationSpecs(doc, doc.indexOf("Inline"));
+    expect(decorations.some((item) => item.widget && item.block)).toBe(false);
+    expect(decorations.some((item) => item.className === "cm-live-table-cell")).toBe(true);
+  });
+
+  it("activates an inactive table for source editing", () => {
+    const doc = "intro\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [markdown({ extensions: GFM }), wysiwygExtension],
+      }),
+    });
+
+    const table = parent.querySelector<HTMLElement>(".cm-live-table-widget");
+    expect(table).not.toBeNull();
+    table?.click();
+    expect(parent.querySelector(".cm-live-table-widget")).toBeNull();
+    expect(view.state.selection.main.head).toBeGreaterThan(doc.indexOf("| Mode"));
+    view.destroy();
+  });
+
+  it("renders an inactive horizontal rule and reveals its source when active", () => {
+    const doc = "intro\n\n---\n\noutro";
+    const marker = doc.indexOf("---");
+    expect(
+      decorationSpecs(doc).some((item) => item.from === marker && item.to === marker + 3),
+    ).toBe(true);
+    expect(
+      decorationSpecs(doc, marker + 1).some(
+        (item) => item.from === marker && item.to === marker + 3,
+      ),
+    ).toBe(false);
   });
 
   it("keeps a task as a clickable checkbox even when its line is active", () => {
@@ -84,7 +133,7 @@ describe("Inline mode decorations", () => {
       state: EditorState.create({
         doc,
         selection: { anchor: cursor },
-        extensions: [markdown(), wysiwygExtension],
+        extensions: [markdown({ extensions: GFM }), wysiwygExtension],
       }),
     });
 
@@ -104,7 +153,7 @@ describe("Inline mode decorations", () => {
       state: EditorState.create({
         doc,
         selection: { anchor: doc.indexOf("Note") },
-        extensions: [markdown(), wysiwygExtension],
+        extensions: [markdown({ extensions: GFM }), wysiwygExtension],
       }),
     });
 
