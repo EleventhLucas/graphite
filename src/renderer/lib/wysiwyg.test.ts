@@ -5,9 +5,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import { describe, expect, it } from "vitest";
-import { buildWysiwygDecorations, wysiwygExtension } from "./wysiwyg";
+import { buildWysiwygDecorations, type WysiwygOptions, wysiwygExtension } from "./wysiwyg";
 
-function decorationSpecs(doc: string, cursor = 0) {
+function decorationSpecs(doc: string, cursor = 0, options?: WysiwygOptions) {
   const state = EditorState.create({
     doc,
     selection: { anchor: cursor },
@@ -20,11 +20,14 @@ function decorationSpecs(doc: string, cursor = 0) {
     widget?: { ignoreEvent?(): boolean };
     block?: boolean;
   }> = [];
-  buildWysiwygDecorations(state).between(0, doc.length, (from, to, value) => {
+  buildWysiwygDecorations(state, options).between(0, doc.length, (from, to, value) => {
     found.push({
       from,
       to,
-      className: value.spec.class as string | undefined,
+      className:
+        (value.spec.class as string | undefined) ??
+        (value.spec.attributes as { class?: string } | undefined)?.class ??
+        undefined,
       widget: value.spec.widget as { ignoreEvent?(): boolean } | undefined,
       block: value.spec.block as boolean | undefined,
     });
@@ -37,14 +40,26 @@ describe("Inline mode decorations", () => {
     const doc = "intro\n# Heading";
     const decorations = decorationSpecs(doc);
     expect(decorations.some((item) => item.className?.includes("cm-live-heading-1"))).toBe(true);
-    expect(decorations.some((item) => item.from === 6 && item.to === 7)).toBe(true);
+    expect(decorations.some((item) => item.from === 6 && item.to === 8)).toBe(true);
   });
 
   it("reveals heading syntax while its text is edited", () => {
     const doc = "intro\n# Heading";
     const decorations = decorationSpecs(doc, doc.indexOf("Heading"));
     expect(decorations.some((item) => item.className?.includes("cm-live-heading-1"))).toBe(true);
-    expect(decorations.some((item) => item.from === 6 && item.to === 7)).toBe(false);
+    expect(decorations.some((item) => item.from === 6 && item.to === 8)).toBe(false);
+  });
+
+  it("renders an inactive Setext heading without leaving its marker line visible", () => {
+    const doc = "Intro\n\nSetext heading\n==============";
+    const markerLine = doc.indexOf("===");
+    const decorations = decorationSpecs(doc);
+    expect(decorations.some((item) => item.className?.includes("cm-live-heading-1"))).toBe(true);
+    expect(
+      decorations.some(
+        (item) => item.from === markerLine && item.className === "cm-live-hidden-line",
+      ),
+    ).toBe(true);
   });
 
   it("uses GFM nodes for strikethrough and inactive table rendering", () => {
@@ -106,10 +121,58 @@ describe("Inline mode decorations", () => {
   it("conceals wikilink targets when a display label is present", () => {
     const doc = "intro\nSee [[Notes/Target|friendly label]].";
     const decorations = decorationSpecs(doc);
-    const targetStart = doc.indexOf("Notes/Target");
+    const opening = doc.indexOf("[[");
+    const labelStart = doc.indexOf("friendly label");
+    expect(decorations.some((item) => item.from === opening && item.to === labelStart)).toBe(true);
+    expect(
+      decorations.some((item) => item.from === labelStart && item.className === "cm-live-wikilink"),
+    ).toBe(true);
+    expect(decorations.some((item) => item.from === doc.indexOf("]]"))).toBe(true);
+  });
+
+  it("collapses source-only blank lines until the cursor enters them", () => {
+    const doc = "First paragraph\n\nSecond paragraph";
+    const blankLine = doc.indexOf("\n") + 1;
+    expect(
+      decorationSpecs(doc).some(
+        (item) => item.from === blankLine && item.className === "cm-live-blank-line",
+      ),
+    ).toBe(true);
+    expect(
+      decorationSpecs(doc, blankLine).some(
+        (item) => item.from === blankLine && item.className === "cm-live-blank-line",
+      ),
+    ).toBe(false);
+  });
+
+  it("renders a standalone embed as Preview content when vault context is available", () => {
+    const doc = "Intro\n\n![[Attachments/pixel.png]]";
+    const embedStart = doc.indexOf("![[");
+    const decorations = decorationSpecs(doc, 0, {
+      vaultId: "vault",
+      sourcePath: "Note.md",
+      onOpenNote: () => undefined,
+    });
+
     expect(
       decorations.some(
-        (item) => item.from === targetStart && item.to === targetStart + "Notes/Target|".length,
+        (item) => item.from === embedStart && item.widget !== undefined && item.block,
+      ),
+    ).toBe(true);
+  });
+
+  it("renders a standalone Markdown image through the same Preview content path", () => {
+    const doc = "Intro\n\n![Pixel](Attachments/pixel.png)";
+    const imageStart = doc.indexOf("![");
+    const decorations = decorationSpecs(doc, 0, {
+      vaultId: "vault",
+      sourcePath: "Note.md",
+      onOpenNote: () => undefined,
+    });
+
+    expect(
+      decorations.some(
+        (item) => item.from === imageStart && item.widget !== undefined && item.block,
       ),
     ).toBe(true);
   });

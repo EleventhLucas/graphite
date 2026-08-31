@@ -156,7 +156,8 @@ function PdfEmbed({ url, path }: { url: string; path: string }) {
   }, [url]);
 
   if (error) return <div className="pdf-page-error">{error}</div>;
-  if (!document) return <LoaderCircle className="animate-spin text-muted-foreground" size={18} />;
+  if (!document)
+    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
   const pages: React.ReactNode[] = [];
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     pages.push(
@@ -227,7 +228,8 @@ function AssetEmbed({
       </div>
     );
   }
-  if (!url) return <LoaderCircle className="animate-spin text-muted-foreground" size={18} />;
+  if (!url)
+    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
   if (kind === "image") return <img src={url} alt={path} loading="lazy" />;
   if (kind === "audio")
     return (
@@ -276,7 +278,8 @@ function Embed({
     };
   }, [resolution, vaultId]);
 
-  if (!resolution) return <LoaderCircle className="animate-spin text-muted-foreground" size={18} />;
+  if (!resolution)
+    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
   if (resolution.status !== "resolved") {
     return (
       <div className="embed-fallback">
@@ -292,7 +295,7 @@ function Embed({
     );
   }
   if (note === null)
-    return <LoaderCircle className="animate-spin text-muted-foreground" size={18} />;
+    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
   return (
     <aside className="note-embed">
       <button
@@ -311,6 +314,24 @@ function Embed({
         onOpenNote={onOpenNote}
       />
     </aside>
+  );
+}
+
+export function MarkdownEmbed({
+  vaultId,
+  sourcePath,
+  target,
+  onOpenNote,
+}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote"> & { target: string }) {
+  return (
+    <Embed
+      vaultId={vaultId}
+      sourcePath={sourcePath}
+      target={target}
+      depth={0}
+      visited={[sourcePath]}
+      onOpenNote={onOpenNote}
+    />
   );
 }
 

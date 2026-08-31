@@ -9,23 +9,20 @@ describe("normalizeAppPreferences", () => {
   it("migrates the previous dual-pane visibility settings", () => {
     expect(normalizeAppPreferences({ editorVisible: false, previewVisible: true })).toMatchObject({
       primaryView: "preview",
-      sidePreviewVisible: false,
     });
     expect(normalizeAppPreferences({ editorVisible: true, previewVisible: true })).toMatchObject({
       primaryView: "source",
-      sidePreviewVisible: true,
     });
   });
 
-  it("preserves independent current mode and side-preview settings", () => {
+  it("preserves the current primary mode over legacy pane settings", () => {
     expect(
       normalizeAppPreferences({
         primaryView: "wysiwyg",
-        sidePreviewVisible: false,
         editorVisible: false,
         previewVisible: true,
       }),
-    ).toMatchObject({ primaryView: "wysiwyg", sidePreviewVisible: false });
+    ).toMatchObject({ primaryView: "wysiwyg" });
   });
 
   it("migrates the former system theme to a deterministic light theme", () => {
@@ -33,10 +30,9 @@ describe("normalizeAppPreferences", () => {
     expect(normalizeAppPreferences({ theme: "dark" }).theme).toBe("dark");
   });
 
-  it("clamps persisted pane dimensions", () => {
-    expect(normalizeAppPreferences({ sidebarWidth: 10, editorRatio: 4 })).toMatchObject({
+  it("clamps the persisted sidebar width", () => {
+    expect(normalizeAppPreferences({ sidebarWidth: 10 })).toMatchObject({
       sidebarWidth: 180,
-      editorRatio: 0.8,
     });
   });
 });

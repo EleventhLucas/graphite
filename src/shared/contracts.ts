@@ -80,9 +80,7 @@ export interface AppPreferences {
   theme: ThemePreference;
   sidebarVisible: boolean;
   primaryView: PrimaryView;
-  sidePreviewVisible: boolean;
   sidebarWidth: number;
-  editorRatio: number;
   lastVaultId?: string;
   lastNoteByVault: Record<string, VaultPath>;
 }
@@ -169,9 +167,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "light",
   sidebarVisible: true,
   primaryView: "wysiwyg",
-  sidePreviewVisible: true,
   sidebarWidth: 248,
-  editorRatio: 0.5,
   lastNoteByVault: {},
 };
 
@@ -187,7 +183,6 @@ export function normalizeAppPreferences(stored?: LegacyPreferences | null): AppP
     : stored.editorVisible === false && stored.previewVisible !== false
       ? "preview"
       : "source";
-  const legacySidePreview = stored?.editorVisible !== false && stored?.previewVisible !== false;
   const primaryView = new Set<PrimaryView>(["wysiwyg", "source", "preview"]).has(
     stored?.primaryView as PrimaryView,
   )
@@ -198,9 +193,7 @@ export function normalizeAppPreferences(stored?: LegacyPreferences | null): AppP
     theme: stored?.theme === "dark" ? "dark" : "light",
     sidebarVisible: stored?.sidebarVisible ?? DEFAULT_PREFERENCES.sidebarVisible,
     primaryView,
-    sidePreviewVisible: stored?.sidePreviewVisible ?? legacySidePreview,
     sidebarWidth: Math.min(480, Math.max(180, stored?.sidebarWidth ?? 248)),
-    editorRatio: Math.min(0.8, Math.max(0.2, stored?.editorRatio ?? 0.5)),
     lastVaultId: stored?.lastVaultId,
     lastNoteByVault: stored?.lastNoteByVault ?? {},
   };

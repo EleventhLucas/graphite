@@ -13,7 +13,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex h-8 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:pointer-events-none disabled:opacity-45",
+        "inline-flex h-8 items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-[background-color,color,box-shadow,scale] duration-100 ease-out enabled:active:scale-[0.96] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 disabled:pointer-events-none disabled:opacity-45",
         variant === "default" &&
           "border-border bg-accent text-accent-foreground hover:bg-foreground/10",
         variant === "ghost" && "border-transparent bg-transparent hover:bg-accent",

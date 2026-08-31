@@ -69,25 +69,23 @@ describe("Graphite renderer smoke", () => {
   it("boots the workspace and renders the sample note", async () => {
     render(<App />);
     expect(await screen.findByText("Smoke Vault")).toBeInTheDocument();
-    expect(await screen.findByText("Welcome to Graphite")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Markdown source" })).toHaveValue(
+      "# Welcome to Graphite",
+    );
   });
 
-  it("keeps the primary mode independent from the side preview", async () => {
+  it("cycles Inline, Code, and Preview in the primary document surface", async () => {
     render(<App />);
     const mode = await screen.findByRole("button", { name: "Mode: Inline. Switch to Code" });
-    const sidePreview = screen.getByRole("button", { name: "Hide side preview" });
 
     expect(screen.getAllByRole("button", { name: /^Mode:/ })).toHaveLength(1);
-    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
     fireEvent.click(mode);
     expect(mode).toHaveAccessibleName("Mode: Code. Switch to Preview");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
     fireEvent.click(mode);
     expect(mode).toHaveAccessibleName("Mode: Preview. Switch to Inline");
-    expect(screen.getAllByRole("article")).toHaveLength(2);
-
-    fireEvent.click(sidePreview);
     expect(screen.getAllByRole("article")).toHaveLength(1);
-    expect(mode).toHaveAccessibleName("Mode: Preview. Switch to Inline");
   });
 
   it("switches between light and dark with one click", async () => {

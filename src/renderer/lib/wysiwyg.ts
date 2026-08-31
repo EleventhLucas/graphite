@@ -1,6 +1,15 @@
 import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import { createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { MarkdownEmbed } from "../components/MarkdownPreview";
+
+export interface WysiwygOptions {
+  vaultId: string;
+  sourcePath: string;
+  onOpenNote(path: string): void;
+}
 
 const STYLED_NODES: Record<string, string> = {
   ATXHeading1: "cm-live-heading cm-live-heading-1",
@@ -11,10 +20,13 @@ const STYLED_NODES: Record<string, string> = {
   ATXHeading6: "cm-live-heading cm-live-heading-6",
   Autolink: "cm-live-link",
   Blockquote: "cm-live-blockquote",
+  CodeBlock: "cm-live-code-block",
   Emphasis: "cm-live-emphasis",
   FencedCode: "cm-live-code-block",
   InlineCode: "cm-live-inline-code",
   Link: "cm-live-link",
+  SetextHeading1: "cm-live-heading cm-live-heading-1",
+  SetextHeading2: "cm-live-heading cm-live-heading-2",
   StrongEmphasis: "cm-live-strong",
   Strikethrough: "cm-live-strikethrough",
 };
@@ -234,6 +246,58 @@ class ListMarkerWidget extends WidgetType {
   }
 }
 
+class EmbedWidget extends WidgetType {
+  private root?: Root;
+  private resizeObserver?: ResizeObserver;
+
+  constructor(
+    private readonly target: string,
+    private readonly options: WysiwygOptions,
+  ) {
+    super();
+  }
+
+  eq(other: EmbedWidget) {
+    return (
+      other.target === this.target &&
+      other.options.vaultId === this.options.vaultId &&
+      other.options.sourcePath === this.options.sourcePath
+    );
+  }
+
+  toDOM(view: EditorView) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "markdown-preview cm-live-embed-widget";
+    this.root = createRoot(wrapper);
+    this.root.render(
+      createElement(MarkdownEmbed, {
+        vaultId: this.options.vaultId,
+        sourcePath: this.options.sourcePath,
+        target: this.target,
+        onOpenNote: this.options.onOpenNote,
+      }),
+    );
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => view.requestMeasure());
+      this.resizeObserver.observe(wrapper);
+    }
+    queueMicrotask(() => view.requestMeasure());
+    return wrapper;
+  }
+
+  destroy() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    const root = this.root;
+    this.root = undefined;
+    if (root) queueMicrotask(() => root.unmount());
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
 class TableWidget extends WidgetType {
   constructor(
     private readonly source: string,
@@ -311,11 +375,15 @@ function markerShouldRemainVisible(state: EditorState, parentFrom: number, paren
   return selectionInside(state, parentFrom, parentTo);
 }
 
-export function buildWysiwygDecorations(state: EditorState): DecorationSet {
+export function buildWysiwygDecorations(
+  state: EditorState,
+  options?: WysiwygOptions,
+): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const taskMarkers = new Set<number>();
   const listMarkers = new Set<number>();
   const decoratedLines = new Set<string>();
+  const sourceHeightLines = new Set<number>();
   const frontmatter = parseFrontmatter(state);
 
   if (frontmatter) {
@@ -371,6 +439,20 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
         }
       }
 
+      if (node.name === "Image" && options && !selectionInside(state, node.from, node.to)) {
+        const line = state.doc.lineAt(node.from);
+        const url = node.node.getChild("URL");
+        if (url && line.text.trim() === state.doc.sliceString(node.from, node.to)) {
+          decorations.push(
+            Decoration.replace({
+              widget: new EmbedWidget(state.doc.sliceString(url.from, url.to), options),
+              block: true,
+            }).range(node.from, node.to),
+          );
+          return false;
+        }
+      }
+
       if (node.name === "HorizontalRule") {
         const line = state.doc.lineAt(node.from);
         decorations.push(
@@ -401,24 +483,38 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
         }
       }
 
-      const headingLevel = node.name.startsWith("ATXHeading") ? node.name.at(-1) : undefined;
+      const headingLevel =
+        node.name.startsWith("ATXHeading") || node.name.startsWith("SetextHeading")
+          ? node.name.at(-1)
+          : undefined;
+      if (node.name.startsWith("SetextHeading") && !selectionInside(state, node.from, node.to)) {
+        const markerLine = state.doc.lineAt(Math.max(node.from, node.to - 1));
+        decorations.push(
+          Decoration.line({ attributes: { class: "cm-live-hidden-line" } }).range(markerLine.from),
+        );
+      }
       const lineClass = headingLevel
         ? `cm-live-heading-line cm-live-heading-line-${headingLevel}`
-        : node.name === "FencedCode"
+        : node.name === "FencedCode" || node.name === "CodeBlock"
           ? "cm-live-code-line"
           : node.name === "Blockquote"
             ? "cm-live-blockquote-line"
             : undefined;
       if (lineClass) {
         const first = state.doc.lineAt(node.from).number;
-        const last = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
+        const last = node.name.startsWith("SetextHeading")
+          ? first
+          : state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
         for (let number = first; number <= last; number += 1) {
           const line = state.doc.line(number);
+          if (node.name === "FencedCode" || node.name === "CodeBlock") {
+            sourceHeightLines.add(number);
+          }
           const key = `${line.from}:${lineClass}`;
           if (decoratedLines.has(key)) continue;
           decoratedLines.add(key);
           const edges =
-            node.name === "FencedCode"
+            node.name === "FencedCode" || node.name === "CodeBlock"
               ? `${number === first ? " cm-live-code-start" : ""}${number === last ? " cm-live-code-end" : ""}`
               : "";
           decorations.push(
@@ -463,7 +559,14 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
       if (HIDDEN_MARKERS.has(node.name)) {
         const parent = node.node.parent;
         if (!parent || !markerShouldRemainVisible(state, parent.from, parent.to)) {
-          decorations.push(Decoration.replace({}).range(node.from, node.to));
+          const line = state.doc.lineAt(node.from);
+          const markerEnd =
+            node.name === "HeaderMark" &&
+            node.to < line.to &&
+            /\s/.test(state.doc.sliceString(node.to, node.to + 1))
+              ? node.to + 1
+              : node.to;
+          decorations.push(Decoration.replace({}).range(node.from, markerEnd));
         }
       }
     },
@@ -472,6 +575,15 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const line = state.doc.line(number);
     if (frontmatter && line.from >= frontmatter.from && line.to <= frontmatter.to) continue;
+    if (
+      line.text.trim() === "" &&
+      !sourceHeightLines.has(number) &&
+      !selectionInside(state, line.from, line.to)
+    ) {
+      decorations.push(
+        Decoration.line({ attributes: { class: "cm-live-blank-line" } }).range(line.from),
+      );
+    }
     const task = /^(\s*[-+*]\s+)(\[[ xX]\])/.exec(line.text);
     if (task) {
       const listFrom = line.from + task[1].search(/[-+*]/);
@@ -493,12 +605,34 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
     for (const wikiLink of line.text.matchAll(/(!?)\[\[([^\]\n]+)\]\]/g)) {
       const start = line.from + (wikiLink.index ?? 0);
       const end = start + wikiLink[0].length;
-      if (selectionInside(state, start, end)) continue;
-      if (wikiLink[1]) decorations.push(Decoration.replace({}).range(start, start + 1));
+      const embedded = wikiLink[1] === "!";
+      if (selectionInside(state, start, end)) {
+        decorations.push(Decoration.mark({ class: "cm-live-wikilink-source" }).range(start, end));
+        continue;
+      }
+
+      if (embedded && options && line.text.trim() === wikiLink[0]) {
+        decorations.push(
+          Decoration.replace({
+            widget: new EmbedWidget(wikiLink[2], options),
+            block: true,
+          }).range(start, end),
+        );
+        continue;
+      }
+
+      const contentStart = start + (embedded ? 3 : 2);
+      const contentEnd = end - 2;
       const alias = wikiLink[2].indexOf("|");
-      if (alias >= 0) {
-        const contentStart = start + wikiLink[1].length + 2;
-        decorations.push(Decoration.replace({}).range(contentStart, contentStart + alias + 1));
+      const labelStart = alias >= 0 ? contentStart + alias + 1 : contentStart;
+      decorations.push(Decoration.replace({}).range(start, labelStart));
+      decorations.push(Decoration.replace({}).range(contentEnd, end));
+      if (labelStart < contentEnd) {
+        decorations.push(
+          Decoration.mark({
+            class: embedded ? "cm-live-wikilink cm-live-embed-link" : "cm-live-wikilink",
+          }).range(labelStart, contentEnd),
+        );
       }
     }
   }
@@ -506,18 +640,27 @@ export function buildWysiwygDecorations(state: EditorState): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
-const wysiwygDecorations = StateField.define<DecorationSet>({
-  create: buildWysiwygDecorations,
-  update(decorations, transaction) {
-    if (transaction.docChanged || transaction.selection) {
-      return buildWysiwygDecorations(transaction.state);
-    }
-    return decorations;
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
+export function createWysiwygExtension(options?: WysiwygOptions) {
+  const wysiwygDecorations = StateField.define<DecorationSet>({
+    create: (state) => buildWysiwygDecorations(state, options),
+    update(decorations, transaction) {
+      if (transaction.docChanged || transaction.selection) {
+        return buildWysiwygDecorations(transaction.state, options);
+      }
+      return decorations;
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  });
 
-export const wysiwygExtension = [
-  wysiwygDecorations,
-  EditorView.editorAttributes.of({ class: "cm-live-editor" }),
-];
+  const keepGeometryCurrent = EditorView.updateListener.of((update) => {
+    if (update.docChanged || update.selectionSet) update.view.requestMeasure();
+  });
+
+  return [
+    wysiwygDecorations,
+    keepGeometryCurrent,
+    EditorView.editorAttributes.of({ class: "cm-live-editor" }),
+  ];
+}
+
+export const wysiwygExtension = createWysiwygExtension();

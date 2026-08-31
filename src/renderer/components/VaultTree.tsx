@@ -31,11 +31,17 @@ interface VaultTreeProps {
 }
 
 function EntryIcon({ node, open }: { node: VaultTreeNode; open?: boolean }) {
-  if (node.kind === "folder") return open ? <FolderOpen size={15} /> : <Folder size={15} />;
-  if (node.kind === "image" || node.kind === "pdf") return <FileImage size={15} />;
-  if (node.kind === "audio") return <FileAudio size={15} />;
-  if (node.kind === "video") return <FileVideo size={15} />;
-  return <FileText size={15} />;
+  if (node.kind === "folder")
+    return open ? (
+      <FolderOpen size={15} strokeWidth={1.5} />
+    ) : (
+      <Folder size={15} strokeWidth={1.5} />
+    );
+  if (node.kind === "image" || node.kind === "pdf")
+    return <FileImage size={15} strokeWidth={1.5} />;
+  if (node.kind === "audio") return <FileAudio size={15} strokeWidth={1.5} />;
+  if (node.kind === "video") return <FileVideo size={15} strokeWidth={1.5} />;
+  return <FileText size={15} strokeWidth={1.5} />;
 }
 
 function TreeNode({
@@ -74,9 +80,9 @@ function TreeNode({
         <button type="button" className="tree-label" onClick={activate} title={node.path}>
           {isFolder ? (
             open ? (
-              <ChevronDown size={13} />
+              <ChevronDown size={13} strokeWidth={1.5} />
             ) : (
-              <ChevronRight size={13} />
+              <ChevronRight size={13} strokeWidth={1.5} />
             )
           ) : (
             <span className="tree-icon-spacer" />

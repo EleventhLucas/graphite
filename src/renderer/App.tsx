@@ -12,8 +12,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   RotateCcw,
   Search,
   Sun,
@@ -37,7 +35,6 @@ import { MarkdownPreview } from "./components/MarkdownPreview";
 import { QuickOpen } from "./components/QuickOpen";
 import { VaultTree } from "./components/VaultTree";
 import { bridge } from "./lib/bridge";
-import { calculateSplitRatio } from "./lib/panes";
 
 function containsPath(nodes: VaultTreeNode[], path: string): boolean {
   return nodes.some((node) => node.path === path || containsPath(node.children ?? [], path));
@@ -471,7 +468,8 @@ export default function App() {
   };
 
   const saveIcon = useMemo(() => {
-    if (saveStatus === "saving") return <LoaderCircle className="animate-spin" size={13} />;
+    if (saveStatus === "saving")
+      return <LoaderCircle className="motion-safe:animate-spin" size={13} />;
     if (saveStatus === "error" || saveStatus === "conflict") return <CircleAlert size={13} />;
     return <Check size={13} />;
   }, [saveStatus]);
@@ -573,6 +571,7 @@ export default function App() {
             variant="ghost"
             size="icon"
             onClick={() => setQuickOpen(true)}
+            aria-label="Quick open"
             title="Quick open (Ctrl/Cmd+P)"
           >
             <Search size={16} />
@@ -590,26 +589,6 @@ export default function App() {
             title={`Switch to ${nextViewMode.label}`}
           >
             <ViewModeIcon size={16} /> {currentViewMode.label}
-          </Button>
-          <span className="toolbar-divider" aria-hidden="true" />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={preferences.sidePreviewVisible ? "Hide side preview" : "Show side preview"}
-            aria-pressed={preferences.sidePreviewVisible}
-            onClick={() =>
-              setPreferences((current) => ({
-                ...current,
-                sidePreviewVisible: !current.sidePreviewVisible,
-              }))
-            }
-            title={preferences.sidePreviewVisible ? "Hide side preview" : "Show side preview"}
-          >
-            {preferences.sidePreviewVisible ? (
-              <PanelRightClose size={16} />
-            ) : (
-              <PanelRightOpen size={16} />
-            )}
           </Button>
           <Button
             variant="ghost"
@@ -633,6 +612,7 @@ export default function App() {
                   variant="ghost"
                   size="icon"
                   onClick={() => void createNote()}
+                  aria-label="New note"
                   title="New note"
                 >
                   <FilePlus2 size={15} />
@@ -641,6 +621,7 @@ export default function App() {
                   variant="ghost"
                   size="icon"
                   onClick={() => void createFolder()}
+                  aria-label="New folder"
                   title="New folder"
                 >
                   <FolderPlus size={15} />
@@ -648,6 +629,7 @@ export default function App() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label="Collapse sidebar"
                   onClick={() =>
                     setPreferences((current) => ({ ...current, sidebarVisible: false }))
                   }
@@ -680,6 +662,7 @@ export default function App() {
             variant="ghost"
             size="icon"
             className="sidebar-restore"
+            aria-label="Show sidebar"
             onClick={() => setPreferences((current) => ({ ...current, sidebarVisible: true }))}
             title="Show sidebar"
           >
@@ -730,16 +713,7 @@ export default function App() {
               <p>Choose a note from the file tree or create a new one.</p>
             </div>
           ) : (
-            <div
-              className="document-panes"
-              style={
-                preferences.sidePreviewVisible
-                  ? {
-                      gridTemplateColumns: `${preferences.editorRatio}fr 4px ${1 - preferences.editorRatio}fr`,
-                    }
-                  : undefined
-              }
-            >
+            <div className="document-panes">
               <section className="document-pane primary-pane">
                 <div className="pane-title">{documentName(snapshot.path)}</div>
                 {preferences.primaryView === "preview" ? (
@@ -759,67 +733,12 @@ export default function App() {
                     dark={dark}
                     disabled={deleted}
                     mode={preferences.primaryView}
+                    vaultId={vault.id}
+                    sourcePath={snapshot.path}
+                    onOpenNote={openDocument}
                   />
                 )}
               </section>
-              {preferences.sidePreviewVisible && (
-                <hr
-                  className="resize-handle"
-                  aria-label="Resize main view and side preview"
-                  aria-orientation="vertical"
-                  aria-valuemin={20}
-                  aria-valuemax={80}
-                  aria-valuenow={Math.round(preferences.editorRatio * 100)}
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                    event.preventDefault();
-                    const direction = event.key === "ArrowLeft" ? -0.02 : 0.02;
-                    setPreferences((current) => ({
-                      ...current,
-                      editorRatio: Math.max(0.2, Math.min(0.8, current.editorRatio + direction)),
-                    }));
-                  }}
-                  onPointerDown={(event) => {
-                    const handle = event.currentTarget;
-                    const bounds = handle.parentElement?.getBoundingClientRect();
-                    if (!bounds) return;
-                    const handleBounds = handle.getBoundingClientRect();
-                    const grabOffset = event.clientX - handleBounds.left;
-                    handle.setPointerCapture(event.pointerId);
-                    const move = (moveEvent: PointerEvent) =>
-                      setPreferences((current) => ({
-                        ...current,
-                        editorRatio: calculateSplitRatio(
-                          moveEvent.clientX,
-                          bounds.left,
-                          bounds.width,
-                          handleBounds.width,
-                          grabOffset,
-                        ),
-                      }));
-                    const stop = () => {
-                      handle.removeEventListener("pointermove", move);
-                      handle.removeEventListener("pointerup", stop);
-                      handle.removeEventListener("pointercancel", stop);
-                    };
-                    handle.addEventListener("pointermove", move);
-                    handle.addEventListener("pointerup", stop);
-                    handle.addEventListener("pointercancel", stop);
-                  }}
-                />
-              )}
-              {preferences.sidePreviewVisible && (
-                <section className="document-pane preview-pane" aria-label="Side preview">
-                  <div className="pane-title">{documentName(snapshot.path)}</div>
-                  <MarkdownPreview
-                    vaultId={vault.id}
-                    sourcePath={snapshot.path}
-                    markdown={draft}
-                    onOpenNote={(path) => void openDocument(path)}
-                  />
-                </section>
-              )}
             </div>
           )}
         </section>
