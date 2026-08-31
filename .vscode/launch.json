@@ -10,6 +10,13 @@
       "env": {
         "WEBKIT_DISABLE_DMABUF_RENDERER": "1"
       }
+    },
+    {
+      "name": "Graphite: Web Editor",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun run dev:renderer",
+      "cwd": "${workspaceFolder}"
     }
   ]
 }
