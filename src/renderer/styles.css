@@ -595,12 +595,19 @@ button {
   padding: 11px 13px;
   color: hsl(var(--foreground));
   font-family: ui-sans-serif, system-ui, sans-serif;
-  cursor: text;
 }
 
-.cm-live-properties:focus-visible {
+.cm-live-properties:focus-within {
   outline: 2px solid hsl(var(--foreground) / 0.42);
   outline-offset: 2px;
+}
+
+.cm-live-properties-header {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .cm-live-properties-heading {
@@ -611,24 +618,68 @@ button {
   text-transform: uppercase;
 }
 
-.cm-live-properties dl {
+.cm-live-properties-source-button,
+.cm-live-embed-source-button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 0 8px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background-color 100ms ease-out,
+    color 100ms ease-out;
+}
+
+.cm-live-properties-source-button:hover,
+.cm-live-embed-source-button:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+.cm-live-properties-source-button:focus-visible,
+.cm-live-embed-source-button:focus-visible {
+  outline: 2px solid hsl(var(--foreground) / 0.42);
+  outline-offset: 1px;
+}
+
+.cm-live-properties-rows {
   display: grid;
   grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
   gap: 5px 14px;
-  margin: 0;
   font-size: 13px;
   line-height: 1.45;
 }
 
-.cm-live-properties dt {
+.cm-live-properties-rows label {
+  display: contents;
+}
+
+.cm-live-property-key {
+  align-self: center;
   color: hsl(var(--muted-foreground));
   font-weight: 600;
 }
 
-.cm-live-properties dd {
+.cm-live-properties-rows input {
   min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  padding: 3px 6px;
+  color: hsl(var(--foreground));
+}
+
+.cm-live-properties-rows input:hover {
+  border-color: hsl(var(--border));
+}
+
+.cm-live-properties-rows input:focus {
+  border-color: hsl(var(--foreground) / 0.35);
+  background: hsl(var(--background));
+  outline: 0;
 }
 
 .cm-live-frontmatter-source {
@@ -637,76 +688,71 @@ button {
   font-size: 0.88em;
 }
 
-.cm-live-table-widget {
+.cm-live-table-wrapper {
+  position: relative;
+  display: table;
+  width: 100%;
   margin: 0.75em 0;
-  overflow: auto;
   border: 1px solid hsl(var(--border));
   border-radius: 7px;
   background: hsl(var(--background));
-  cursor: text;
-}
-
-.cm-live-table-widget:focus-visible {
-  outline: 2px solid hsl(var(--foreground) / 0.42);
-  outline-offset: 2px;
-}
-
-.cm-live-table-widget table {
-  width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.92em;
+  overflow: hidden;
 }
 
-.cm-live-table-widget th,
-.cm-live-table-widget td {
+.cm-live-table-row {
+  display: table-row !important;
+}
+
+.cm-live-table-wrapper .cm-widgetBuffer {
+  display: none !important;
+}
+
+.cm-live-table-cell {
+  display: table-cell;
+  min-width: 4rem;
+  height: 2.5rem;
   border-right: 1px solid hsl(var(--border));
   border-bottom: 1px solid hsl(var(--border));
   padding: 7px 10px;
   vertical-align: top;
-}
-
-.cm-live-table-widget th {
-  background: hsl(var(--panel));
-  font-weight: 680;
-}
-
-.cm-live-table-widget tr:nth-child(even) td {
-  background: hsl(var(--muted) / 0.32);
-}
-
-.cm-live-table-widget tr:last-child td {
-  border-bottom: 0;
-}
-
-.cm-live-table-widget th:last-child,
-.cm-live-table-widget td:last-child {
-  border-right: 0;
-}
-
-.cm-live-table-line {
-  padding-inline: 10px !important;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.9em;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .cm-live-table-header {
-  border-radius: 6px 6px 0 0;
   background: hsl(var(--panel));
+}
+
+.cm-live-table-heading-cell {
   font-weight: 680;
 }
 
+.cm-live-table-row-even {
+  background: hsl(var(--muted) / 0.32);
+}
+
+.cm-live-table-row-last .cm-live-table-cell {
+  border-bottom: 0;
+}
+
+.cm-live-table-cell-last {
+  border-right: 0;
+}
+
+.cm-live-table-cell-center {
+  text-align: center;
+}
+
+.cm-live-table-cell-right {
+  text-align: right;
+}
+
 .cm-live-table-delimiter {
-  background: hsl(var(--muted) / 0.6);
-  color: hsl(var(--muted-foreground));
-}
-
-.cm-live-table-body {
-  background: hsl(var(--background));
-}
-
-.cm-live-table-cell {
-  color: hsl(var(--foreground));
+  display: none !important;
 }
 
 .cm-live-hr-line {
@@ -1004,24 +1050,51 @@ button {
 }
 
 .cm-live-embed-widget.markdown-preview {
+  position: relative;
   height: auto;
   margin: 0.85em 0;
   overflow: visible;
 }
 
-.cm-live-embed-widget > img,
-.cm-live-embed-widget > video,
-.cm-live-embed-widget > audio,
-.cm-live-embed-widget > .note-embed,
-.cm-live-embed-widget > .pdf-embed,
-.cm-live-embed-widget > .embed-fallback {
+.cm-live-embed-toolbar {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity 100ms ease-out;
+}
+
+.cm-live-embed-widget:hover .cm-live-embed-toolbar,
+.cm-live-embed-widget:focus-within .cm-live-embed-toolbar {
+  opacity: 1;
+}
+
+.cm-live-embed-source-button {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.94);
+  box-shadow: 0 3px 10px hsl(0 0% 0% / 0.16);
+}
+
+.cm-live-embed-content > img,
+.cm-live-embed-content > video,
+.cm-live-embed-content > audio,
+.cm-live-embed-content > .note-embed,
+.cm-live-embed-content > .pdf-embed,
+.cm-live-embed-content > .embed-fallback {
   margin: 0;
 }
 
-.cm-live-embed-widget > img,
-.cm-live-embed-widget > video,
-.cm-live-embed-widget > audio {
+.cm-live-embed-content > img,
+.cm-live-embed-content > video,
+.cm-live-embed-content > audio {
   display: block;
+}
+
+.cm-live-embed-source-line {
+  color: hsl(var(--muted-foreground));
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.88em;
 }
 
 .empty-document {
@@ -1362,6 +1435,12 @@ button {
   .resize-handle,
   .recent-vaults > button,
   .quick-results button {
+    transition: none;
+  }
+
+  .cm-live-embed-toolbar,
+  .cm-live-properties-source-button,
+  .cm-live-embed-source-button {
     transition: none;
   }
 

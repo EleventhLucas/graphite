@@ -1,6 +1,12 @@
 import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Range } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import {
+  BlockWrapper,
+  Decoration,
+  EditorView,
+  WidgetType,
+  type DecorationSet,
+} from "@codemirror/view";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MarkdownEmbed } from "../components/MarkdownPreview";
@@ -44,7 +50,15 @@ const HIDDEN_MARKERS = new Set([
 interface FrontmatterRange {
   from: number;
   to: number;
-  entries: Array<[string, string]>;
+  entries: FrontmatterEntry[];
+}
+
+interface FrontmatterEntry {
+  key: string;
+  value: string;
+  valueFrom: number;
+  valueTo: number;
+  listIndent?: string;
 }
 
 interface TableData {
@@ -101,6 +115,48 @@ function parseTable(value: string): TableData | null {
   };
 }
 
+function tablePipeOffsets(value: string): number[] {
+  const offsets: number[] = [];
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === "|" && !escaped) offsets.push(index);
+    escaped = character === "\\" && !escaped;
+    if (character !== "\\") escaped = false;
+  }
+  return offsets;
+}
+
+function tableCellOffsets(value: string): Array<{ from: number; to: number }> {
+  const pipes = tablePipeOffsets(value);
+  const firstContent = value.search(/\S/);
+  const lastContent = value.search(/\s*$/) - 1;
+  const leadingPipe = firstContent >= 0 && pipes[0] === firstContent;
+  const trailingPipe = lastContent >= 0 && pipes.at(-1) === lastContent;
+  const separators = pipes.slice(leadingPipe ? 1 : 0, trailingPipe ? -1 : undefined);
+  const cells: Array<{ from: number; to: number }> = [];
+  let from = leadingPipe ? (pipes[0] ?? -1) + 1 : 0;
+  for (const separator of separators) {
+    cells.push({ from, to: separator });
+    from = separator + 1;
+  }
+  cells.push({ from, to: trailingPipe ? (pipes.at(-1) ?? value.length) : value.length });
+  return cells;
+}
+
+function tableCanRenderInPlace(state: EditorState, from: number, to: number): TableData | null {
+  const table = parseTable(state.doc.sliceString(from, to));
+  if (!table) return null;
+  const first = state.doc.lineAt(from).number;
+  const last = state.doc.lineAt(Math.max(from, to - 1)).number;
+  for (let number = first; number <= last; number += 1) {
+    if (number === first + 1) continue;
+    const line = state.doc.line(number);
+    if (tableCellOffsets(line.text).length !== table.headers.length) return null;
+  }
+  return table;
+}
+
 function frontmatterIsActive(state: EditorState, range: FrontmatterRange): boolean {
   return state.selection.ranges.some(
     (selection) => selection.head > range.from && selection.head < range.to,
@@ -118,19 +174,33 @@ function parseFrontmatter(state: EditorState): FrontmatterRange | null {
   }
   if (!closingLine) return null;
 
-  const entries: Array<[string, string]> = [];
+  const entries: FrontmatterEntry[] = [];
   for (let number = 2; number < closingLine; number += 1) {
-    const value = state.doc.line(number).text;
-    const property = /^([\w-]+):\s*(.*)$/.exec(value);
-    if (property) {
-      entries.push([property[1], property[2]]);
-      continue;
+    const line = state.doc.line(number);
+    const property = /^([\w-]+):(\s*)(.*)$/.exec(line.text);
+    if (!property) continue;
+
+    const values: string[] = [];
+    if (property[3]) values.push(property[3]);
+    let valueTo = line.to;
+    let listIndent: string | undefined;
+    while (number + 1 < closingLine) {
+      const nextLine = state.doc.line(number + 1);
+      const listItem = /^(\s*)-\s+(.+)$/.exec(nextLine.text);
+      if (!listItem) break;
+      listIndent ??= listItem[1];
+      values.push(listItem[2]);
+      valueTo = nextLine.to;
+      number += 1;
     }
-    const listItem = /^\s*-\s+(.+)$/.exec(value);
-    if (listItem && entries.length) {
-      const previous = entries.at(-1);
-      if (previous) previous[1] = previous[1] ? `${previous[1]}, ${listItem[1]}` : listItem[1];
-    }
+
+    entries.push({
+      key: property[1],
+      value: values.join(", "),
+      valueFrom: line.from + property[1].length + 1 + property[2].length,
+      valueTo,
+      ...(listIndent === undefined ? {} : { listIndent }),
+    });
   }
 
   return { from: 0, to: state.doc.line(closingLine).to, entries };
@@ -142,46 +212,61 @@ class FrontmatterWidget extends WidgetType {
   }
 
   eq(other: FrontmatterWidget) {
-    return (
-      other.range.from === this.range.from &&
-      other.range.to === this.range.to &&
-      JSON.stringify(other.range.entries) === JSON.stringify(this.range.entries)
-    );
+    return JSON.stringify(other.range.entries) === JSON.stringify(this.range.entries);
   }
 
   toDOM(view: EditorView) {
     const properties = document.createElement("div");
     properties.className = "cm-live-properties";
-    properties.tabIndex = 0;
-    properties.setAttribute("role", "button");
-    properties.setAttribute("aria-label", "Document properties. Activate to edit YAML source.");
+    properties.setAttribute("role", "group");
+    properties.setAttribute("aria-label", "Document properties");
 
+    const header = document.createElement("div");
+    header.className = "cm-live-properties-header";
     const heading = document.createElement("span");
     heading.className = "cm-live-properties-heading";
     heading.textContent = "Properties";
-    properties.append(heading);
+    const editSource = document.createElement("button");
+    editSource.type = "button";
+    editSource.className = "cm-live-properties-source-button";
+    editSource.textContent = "Edit YAML";
+    editSource.addEventListener("click", () => {
+      view.dispatch({
+        selection: { anchor: Math.min(this.range.from + 4, this.range.to) },
+        scrollIntoView: true,
+      });
+      view.focus();
+    });
+    header.append(heading, editSource);
+    properties.append(header);
 
-    const rows = document.createElement("dl");
-    for (const [key, value] of this.range.entries) {
-      const term = document.createElement("dt");
-      term.textContent = key;
-      const description = document.createElement("dd");
-      description.textContent = value || "—";
-      rows.append(term, description);
+    const rows = document.createElement("div");
+    rows.className = "cm-live-properties-rows";
+    for (const entry of this.range.entries) {
+      const label = document.createElement("label");
+      const key = document.createElement("span");
+      key.className = "cm-live-property-key";
+      key.textContent = entry.key;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = entry.value;
+      input.setAttribute("aria-label", `Property: ${entry.key}`);
+      input.addEventListener("change", () => {
+        const insert =
+          entry.listIndent === undefined
+            ? input.value
+            : input.value
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean)
+                .map((value) => `\n${entry.listIndent}- ${value}`)
+                .join("");
+        view.dispatch({ changes: { from: entry.valueFrom, to: entry.valueTo, insert } });
+      });
+      label.append(key, input);
+      rows.append(label);
     }
     properties.append(rows);
-
-    const edit = () => {
-      view.dispatch({ selection: { anchor: Math.min(this.range.from + 4, this.range.to) } });
-      view.focus();
-    };
-    properties.addEventListener("mousedown", (event) => event.preventDefault());
-    properties.addEventListener("click", edit);
-    properties.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      edit();
-    });
     return properties;
   }
 
@@ -252,6 +337,7 @@ class EmbedWidget extends WidgetType {
 
   constructor(
     private readonly target: string,
+    private readonly source: string,
     private readonly options: WysiwygOptions,
   ) {
     super();
@@ -260,6 +346,7 @@ class EmbedWidget extends WidgetType {
   eq(other: EmbedWidget) {
     return (
       other.target === this.target &&
+      other.source === this.source &&
       other.options.vaultId === this.options.vaultId &&
       other.options.sourcePath === this.options.sourcePath
     );
@@ -268,7 +355,24 @@ class EmbedWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrapper = document.createElement("div");
     wrapper.className = "markdown-preview cm-live-embed-widget";
-    this.root = createRoot(wrapper);
+    const toolbar = document.createElement("div");
+    toolbar.className = "cm-live-embed-toolbar";
+    const editSource = document.createElement("button");
+    editSource.type = "button";
+    editSource.className = "cm-live-embed-source-button";
+    editSource.textContent = "Edit embed";
+    editSource.addEventListener("click", () => {
+      const to = view.posAtDOM(wrapper);
+      const from = Math.max(0, to - this.source.length);
+      if (view.state.doc.sliceString(from, to) !== this.source) return;
+      view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true });
+      view.focus();
+    });
+    toolbar.append(editSource);
+    const content = document.createElement("div");
+    content.className = "cm-live-embed-content";
+    wrapper.append(toolbar, content);
+    this.root = createRoot(content);
     this.root.render(
       createElement(MarkdownEmbed, {
         vaultId: this.options.vaultId,
@@ -298,81 +402,120 @@ class EmbedWidget extends WidgetType {
   }
 }
 
-class TableWidget extends WidgetType {
-  constructor(
-    private readonly source: string,
-    private readonly from: number,
-    private readonly to: number,
-  ) {
-    super();
-  }
+function markerShouldRemainVisible(state: EditorState, parentFrom: number, parentTo: number) {
+  return selectionInside(state, parentFrom, parentTo);
+}
 
-  eq(other: TableWidget) {
-    return other.source === this.source && other.from === this.from && other.to === this.to;
-  }
+const tableWrapper = BlockWrapper.create({
+  tagName: "div",
+  attributes: { class: "cm-live-table-wrapper" },
+});
 
-  toDOM(view: EditorView) {
-    const data = parseTable(this.source);
-    const wrapper = document.createElement("div");
-    wrapper.className = "cm-live-table-widget";
-    wrapper.tabIndex = 0;
-    wrapper.setAttribute("role", "button");
-    wrapper.setAttribute("aria-label", "Markdown table. Activate to edit its source.");
+function tableCellClass(
+  header: boolean,
+  alignment: "left" | "center" | "right",
+  last: boolean,
+): string {
+  return [
+    "cm-live-table-cell",
+    header ? "cm-live-table-heading-cell" : "",
+    alignment === "center" ? "cm-live-table-cell-center" : "",
+    alignment === "right" ? "cm-live-table-cell-right" : "",
+    last ? "cm-live-table-cell-last" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
-    if (data) {
-      const table = document.createElement("table");
-      const head = document.createElement("thead");
-      const headingRow = document.createElement("tr");
-      data.headers.forEach((value, index) => {
-        const cell = document.createElement("th");
-        cell.textContent = value;
-        cell.style.textAlign = data.alignments[index] ?? "left";
-        headingRow.append(cell);
-      });
-      head.append(headingRow);
-      table.append(head);
-
-      if (data.rows.length) {
-        const body = document.createElement("tbody");
-        for (const values of data.rows) {
-          const row = document.createElement("tr");
-          data.headers.forEach((_, index) => {
-            const cell = document.createElement("td");
-            cell.textContent = values[index] ?? "";
-            cell.style.textAlign = data.alignments[index] ?? "left";
-            row.append(cell);
-          });
-          body.append(row);
-        }
-        table.append(body);
-      }
-      wrapper.append(table);
+function decorateTableInPlace(
+  state: EditorState,
+  from: number,
+  to: number,
+  table: TableData,
+  decorations: Range<Decoration>[],
+): void {
+  const first = state.doc.lineAt(from).number;
+  const last = state.doc.lineAt(Math.max(from, to - 1)).number;
+  for (let number = first; number <= last; number += 1) {
+    const line = state.doc.line(number);
+    if (number === first + 1) {
+      decorations.push(
+        Decoration.line({ attributes: { class: "cm-live-table-delimiter" } }).range(line.from),
+      );
+      decorations.push(Decoration.replace({}).range(line.from, line.to));
+      continue;
     }
 
-    const edit = () => {
-      view.dispatch({
-        selection: { anchor: Math.min(this.from + 2, this.to) },
-        scrollIntoView: true,
-      });
-      view.focus();
-    };
-    wrapper.addEventListener("mousedown", (event) => event.preventDefault());
-    wrapper.addEventListener("click", edit);
-    wrapper.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      edit();
-    });
-    return wrapper;
-  }
+    const header = number === first;
+    const bodyIndex = number - first - 2;
+    const rowClass = [
+      "cm-live-table-row",
+      header ? "cm-live-table-header" : "cm-live-table-body",
+      !header && bodyIndex % 2 === 1 ? "cm-live-table-row-even" : "",
+      number === last ? "cm-live-table-row-last" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    decorations.push(Decoration.line({ attributes: { class: rowClass } }).range(line.from));
 
-  ignoreEvent() {
-    return true;
+    for (const pipe of tablePipeOffsets(line.text)) {
+      decorations.push(Decoration.replace({}).range(line.from + pipe, line.from + pipe + 1));
+    }
+    const cells = tableCellOffsets(line.text);
+    for (let column = 0; column < cells.length; column += 1) {
+      const cellFrom = line.from + cells[column].from;
+      const cellTo = line.from + cells[column].to;
+      if (cellFrom >= cellTo) continue;
+      decorations.push(
+        Decoration.mark({
+          class: tableCellClass(
+            header,
+            table.alignments[column] ?? "left",
+            column === table.headers.length - 1,
+          ),
+        }).range(cellFrom, cellTo),
+      );
+    }
   }
 }
 
-function markerShouldRemainVisible(state: EditorState, parentFrom: number, parentTo: number) {
-  return selectionInside(state, parentFrom, parentTo);
+function buildTableWrappers(view: EditorView) {
+  const wrappers: Range<BlockWrapper>[] = [];
+  syntaxTree(view.state).iterate({
+    enter(node) {
+      if (node.name !== "Table") return;
+      if (tableCanRenderInPlace(view.state, node.from, node.to)) {
+        wrappers.push(tableWrapper.range(node.from, node.to));
+      }
+      return false;
+    },
+  });
+  return BlockWrapper.set(wrappers, true);
+}
+
+function buildTableAtomicRanges(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  syntaxTree(view.state).iterate({
+    enter(node) {
+      if (node.name !== "Table") return;
+      const table = tableCanRenderInPlace(view.state, node.from, node.to);
+      if (!table) return false;
+      const first = view.state.doc.lineAt(node.from).number;
+      const last = view.state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
+      for (let number = first; number <= last; number += 1) {
+        const line = view.state.doc.line(number);
+        if (number === first + 1) {
+          ranges.push(Decoration.replace({}).range(line.from, line.to));
+          continue;
+        }
+        for (const pipe of tablePipeOffsets(line.text)) {
+          ranges.push(Decoration.replace({}).range(line.from + pipe, line.from + pipe + 1));
+        }
+      }
+      return false;
+    },
+  });
+  return Decoration.set(ranges, true);
 }
 
 export function buildWysiwygDecorations(
@@ -383,10 +526,16 @@ export function buildWysiwygDecorations(
   const taskMarkers = new Set<number>();
   const listMarkers = new Set<number>();
   const decoratedLines = new Set<string>();
-  const sourceHeightLines = new Set<number>();
   const frontmatter = parseFrontmatter(state);
 
   if (frontmatter) {
+    decorations.push(
+      Decoration.widget({
+        widget: new FrontmatterWidget(frontmatter),
+        block: true,
+        side: 1,
+      }).range(frontmatter.to),
+    );
     if (frontmatterIsActive(state, frontmatter)) {
       decorations.push(
         Decoration.mark({ class: "cm-live-frontmatter-source" }).range(
@@ -395,12 +544,7 @@ export function buildWysiwygDecorations(
         ),
       );
     } else {
-      decorations.push(
-        Decoration.replace({ widget: new FrontmatterWidget(frontmatter), block: true }).range(
-          frontmatter.from,
-          frontmatter.to,
-        ),
-      );
+      decorations.push(Decoration.replace({}).range(frontmatter.from, frontmatter.to));
     }
   }
 
@@ -416,39 +560,37 @@ export function buildWysiwygDecorations(
       }
 
       if (node.name === "Table") {
-        const source = state.doc.sliceString(node.from, node.to);
-        if (!selectionInside(state, node.from, node.to) && parseTable(source)) {
-          decorations.push(
-            Decoration.replace({
-              widget: new TableWidget(source, node.from, node.to),
-              block: true,
-            }).range(node.from, node.to),
-          );
+        const table = tableCanRenderInPlace(state, node.from, node.to);
+        if (table) {
+          decorateTableInPlace(state, node.from, node.to, table, decorations);
           return false;
-        }
-        const first = state.doc.lineAt(node.from).number;
-        const last = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
-        for (let number = first; number <= last; number += 1) {
-          const line = state.doc.line(number);
-          const kind = number === first ? "header" : number === first + 1 ? "delimiter" : "body";
-          decorations.push(
-            Decoration.line({
-              attributes: { class: `cm-live-table-line cm-live-table-${kind}` },
-            }).range(line.from),
-          );
         }
       }
 
-      if (node.name === "Image" && options && !selectionInside(state, node.from, node.to)) {
+      if (node.name === "Image" && options) {
         const line = state.doc.lineAt(node.from);
         const url = node.node.getChild("URL");
         if (url && line.text.trim() === state.doc.sliceString(node.from, node.to)) {
+          const source = state.doc.sliceString(node.from, node.to);
           decorations.push(
-            Decoration.replace({
-              widget: new EmbedWidget(state.doc.sliceString(url.from, url.to), options),
-              block: true,
-            }).range(node.from, node.to),
+            Decoration.line({ attributes: { class: "cm-live-embed-source-line" } }).range(
+              line.from,
+            ),
           );
+          decorations.push(
+            Decoration.widget({
+              widget: new EmbedWidget(state.doc.sliceString(url.from, url.to), source, options),
+              block: true,
+              side: 1,
+            }).range(node.to),
+          );
+          if (selectionInside(state, node.from, node.to)) {
+            decorations.push(
+              Decoration.mark({ class: "cm-live-wikilink-source" }).range(node.from, node.to),
+            );
+          } else {
+            decorations.push(Decoration.replace({}).range(node.from, node.to));
+          }
           return false;
         }
       }
@@ -507,9 +649,6 @@ export function buildWysiwygDecorations(
           : state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
         for (let number = first; number <= last; number += 1) {
           const line = state.doc.line(number);
-          if (node.name === "FencedCode" || node.name === "CodeBlock") {
-            sourceHeightLines.add(number);
-          }
           const key = `${line.from}:${lineClass}`;
           if (decoratedLines.has(key)) continue;
           decoratedLines.add(key);
@@ -550,12 +689,6 @@ export function buildWysiwygDecorations(
         return;
       }
 
-      if (node.name === "TableCell") {
-        decorations.push(
-          Decoration.mark({ class: "cm-live-table-cell" }).range(node.from, node.to),
-        );
-      }
-
       if (HIDDEN_MARKERS.has(node.name)) {
         const parent = node.node.parent;
         if (!parent || !markerShouldRemainVisible(state, parent.from, parent.to)) {
@@ -575,15 +708,6 @@ export function buildWysiwygDecorations(
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const line = state.doc.line(number);
     if (frontmatter && line.from >= frontmatter.from && line.to <= frontmatter.to) continue;
-    if (
-      line.text.trim() === "" &&
-      !sourceHeightLines.has(number) &&
-      !selectionInside(state, line.from, line.to)
-    ) {
-      decorations.push(
-        Decoration.line({ attributes: { class: "cm-live-blank-line" } }).range(line.from),
-      );
-    }
     const task = /^(\s*[-+*]\s+)(\[[ xX]\])/.exec(line.text);
     if (task) {
       const listFrom = line.from + task[1].search(/[-+*]/);
@@ -606,18 +730,27 @@ export function buildWysiwygDecorations(
       const start = line.from + (wikiLink.index ?? 0);
       const end = start + wikiLink[0].length;
       const embedded = wikiLink[1] === "!";
-      if (selectionInside(state, start, end)) {
-        decorations.push(Decoration.mark({ class: "cm-live-wikilink-source" }).range(start, end));
+      if (embedded && options && line.text.trim() === wikiLink[0]) {
+        decorations.push(
+          Decoration.line({ attributes: { class: "cm-live-embed-source-line" } }).range(line.from),
+        );
+        decorations.push(
+          Decoration.widget({
+            widget: new EmbedWidget(wikiLink[2], wikiLink[0], options),
+            block: true,
+            side: 1,
+          }).range(end),
+        );
+        if (selectionInside(state, start, end)) {
+          decorations.push(Decoration.mark({ class: "cm-live-wikilink-source" }).range(start, end));
+        } else {
+          decorations.push(Decoration.replace({}).range(start, end));
+        }
         continue;
       }
 
-      if (embedded && options && line.text.trim() === wikiLink[0]) {
-        decorations.push(
-          Decoration.replace({
-            widget: new EmbedWidget(wikiLink[2], options),
-            block: true,
-          }).range(start, end),
-        );
+      if (selectionInside(state, start, end)) {
+        decorations.push(Decoration.mark({ class: "cm-live-wikilink-source" }).range(start, end));
         continue;
       }
 
@@ -652,13 +785,10 @@ export function createWysiwygExtension(options?: WysiwygOptions) {
     provide: (field) => EditorView.decorations.from(field),
   });
 
-  const keepGeometryCurrent = EditorView.updateListener.of((update) => {
-    if (update.docChanged || update.selectionSet) update.view.requestMeasure();
-  });
-
   return [
     wysiwygDecorations,
-    keepGeometryCurrent,
+    EditorView.blockWrappers.of(buildTableWrappers),
+    EditorView.atomicRanges.of(buildTableAtomicRanges),
     EditorView.editorAttributes.of({ class: "cm-live-editor" }),
   ];
 }

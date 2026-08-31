@@ -62,23 +62,33 @@ describe("Inline mode decorations", () => {
     ).toBe(true);
   });
 
-  it("uses GFM nodes for strikethrough and inactive table rendering", () => {
+  it("uses GFM nodes for strikethrough and in-place table cells", () => {
     const doc = "~~removed~~\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
     const decorations = decorationSpecs(doc);
     expect(decorations.some((item) => item.className?.includes("cm-live-strikethrough"))).toBe(
       true,
     );
-    expect(decorations.some((item) => item.widget && item.block)).toBe(true);
+    expect(decorations.some((item) => item.className?.includes("cm-live-table-cell"))).toBe(true);
+    expect(decorations.some((item) => item.widget && item.block)).toBe(false);
   });
 
-  it("reveals a table source when its cells are active", () => {
+  it("keeps a table visually formatted when one of its cells is active", () => {
     const doc = "intro\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
     const decorations = decorationSpecs(doc, doc.indexOf("Inline"));
     expect(decorations.some((item) => item.widget && item.block)).toBe(false);
     expect(decorations.some((item) => item.className === "cm-live-table-cell")).toBe(true);
   });
 
-  it("activates an inactive table for source editing", () => {
+  it("formats GFM tables that omit outer pipes", () => {
+    const doc = "Mode | Purpose\n--- | ---\nInline | Live formatting";
+    const decorations = decorationSpecs(doc, doc.indexOf("Inline"));
+    expect(
+      decorations.filter((item) => item.className?.includes("cm-live-table-cell")),
+    ).toHaveLength(4);
+    expect(decorations.some((item) => item.className === "cm-live-table-delimiter")).toBe(true);
+  });
+
+  it("keeps the same table wrapper while selection moves into an editable cell", () => {
     const doc = "intro\n\n| Mode | Purpose |\n| --- | --- |\n| Inline | Live formatting |";
     const parent = document.createElement("div");
     const view = new EditorView({
@@ -89,11 +99,17 @@ describe("Inline mode decorations", () => {
       }),
     });
 
-    const table = parent.querySelector<HTMLElement>(".cm-live-table-widget");
+    const table = parent.querySelector<HTMLElement>(".cm-live-table-wrapper");
     expect(table).not.toBeNull();
-    table?.click();
-    expect(parent.querySelector(".cm-live-table-widget")).toBeNull();
-    expect(view.state.selection.main.head).toBeGreaterThan(doc.indexOf("| Mode"));
+    view.dispatch({ selection: { anchor: doc.indexOf("Mode") + 1 } });
+    expect(parent.querySelector(".cm-live-table-wrapper")).toBe(table);
+    expect(parent.querySelector(".cm-live-table-cell")).not.toBeNull();
+    expect(view.state.selection.main.head).toBe(doc.indexOf("Mode") + 1);
+    view.dispatch({
+      changes: { from: doc.indexOf("Mode"), to: doc.indexOf("Mode") + 4, insert: "View" },
+    });
+    expect(parent.querySelector(".cm-live-table-wrapper")).toBe(table);
+    expect(parent.querySelector(".cm-live-table-header")?.textContent).toContain("View");
     view.destroy();
   });
 
@@ -130,14 +146,14 @@ describe("Inline mode decorations", () => {
     expect(decorations.some((item) => item.from === doc.indexOf("]]"))).toBe(true);
   });
 
-  it("collapses source-only blank lines until the cursor enters them", () => {
+  it("leaves blank lines at CodeMirror's stable document height", () => {
     const doc = "First paragraph\n\nSecond paragraph";
     const blankLine = doc.indexOf("\n") + 1;
     expect(
       decorationSpecs(doc).some(
         (item) => item.from === blankLine && item.className === "cm-live-blank-line",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       decorationSpecs(doc, blankLine).some(
         (item) => item.from === blankLine && item.className === "cm-live-blank-line",
@@ -154,11 +170,15 @@ describe("Inline mode decorations", () => {
       onOpenNote: () => undefined,
     });
 
-    expect(
-      decorations.some(
-        (item) => item.from === embedStart && item.widget !== undefined && item.block,
-      ),
-    ).toBe(true);
+    expect(decorations.some((item) => item.widget !== undefined && item.block)).toBe(true);
+    expect(decorations.some((item) => item.from === embedStart && item.to > item.from)).toBe(true);
+
+    const active = decorationSpecs(doc, embedStart + 2, {
+      vaultId: "vault",
+      sourcePath: "Note.md",
+      onOpenNote: () => undefined,
+    });
+    expect(active.some((item) => item.widget !== undefined && item.block)).toBe(true);
   });
 
   it("renders a standalone Markdown image through the same Preview content path", () => {
@@ -170,11 +190,8 @@ describe("Inline mode decorations", () => {
       onOpenNote: () => undefined,
     });
 
-    expect(
-      decorations.some(
-        (item) => item.from === imageStart && item.widget !== undefined && item.block,
-      ),
-    ).toBe(true);
+    expect(decorations.some((item) => item.widget !== undefined && item.block)).toBe(true);
+    expect(decorations.some((item) => item.from === imageStart && item.to > item.from)).toBe(true);
   });
 
   it("renders frontmatter as a properties block until it is activated", () => {
@@ -220,11 +237,42 @@ describe("Inline mode decorations", () => {
       }),
     });
 
-    const properties = parent.querySelector<HTMLElement>(".cm-live-properties");
-    expect(properties).not.toBeNull();
-    properties?.click();
+    const editYaml = parent.querySelector<HTMLButtonElement>(".cm-live-properties-source-button");
+    expect(editYaml).not.toBeNull();
+    editYaml?.click();
     expect(view.state.selection.main.head).toBeLessThan(doc.indexOf("\n#"));
-    expect(parent.querySelector(".cm-live-properties")).toBeNull();
+    expect(parent.querySelector(".cm-live-properties")).not.toBeNull();
+    view.destroy();
+  });
+
+  it("edits scalar and list properties without exposing YAML", () => {
+    const doc = "---\ntitle: Example\ntags:\n  - old\n---\n# Note";
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        selection: { anchor: doc.indexOf("Note") },
+        extensions: [markdown({ extensions: GFM }), wysiwygExtension],
+      }),
+    });
+
+    const title = parent.querySelector<HTMLInputElement>('input[aria-label="Property: title"]');
+    const tags = parent.querySelector<HTMLInputElement>('input[aria-label="Property: tags"]');
+    expect(title).not.toBeNull();
+    expect(tags).not.toBeNull();
+    if (title && tags) {
+      title.value = "Updated";
+      title.dispatchEvent(new Event("change", { bubbles: true }));
+      const currentTags = parent.querySelector<HTMLInputElement>(
+        'input[aria-label="Property: tags"]',
+      );
+      if (!currentTags) throw new Error("Expected tags input after title update.");
+      currentTags.value = "one, two";
+      currentTags.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    expect(view.state.doc.toString()).toContain("title: Updated");
+    expect(view.state.doc.toString()).toContain("tags:\n  - one\n  - two");
     view.destroy();
   });
 });

@@ -102,4 +102,26 @@ describe("MarkdownEditor", () => {
     expect(container.querySelector(".cm-live-embed-widget")).not.toBeNull();
     expect(await screen.findByText("Fixture attachment preview")).toBeInTheDocument();
   });
+
+  it("keeps a rendered embed mounted while exposing its Markdown source", () => {
+    const { container } = render(
+      <MarkdownEditor
+        value={"Intro\n\n![[Attachments/pixel.png]]"}
+        onChange={vi.fn()}
+        dark={false}
+        mode="wysiwyg"
+        vaultId="vault"
+        sourcePath="Note.md"
+        onOpenNote={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".cm-content")?.textContent).not.toContain("![[");
+    const edit = screen.getByRole("button", { name: "Edit embed" });
+    edit.click();
+    expect(container.querySelector(".cm-content")?.textContent).toContain(
+      "![[Attachments/pixel.png]]",
+    );
+    expect(container.querySelector(".cm-live-embed-widget")).not.toBeNull();
+  });
 });
