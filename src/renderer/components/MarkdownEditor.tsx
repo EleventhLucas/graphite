@@ -19,7 +19,7 @@ const inlineThemeRules = {
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "hsl(var(--foreground))",
   },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
     backgroundColor: "hsl(var(--foreground) / 0.16)",
   },
   ".cm-activeLine": {

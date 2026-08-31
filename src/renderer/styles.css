@@ -412,7 +412,6 @@ button {
 }
 
 .cm-live-editor .cm-selectionBackground,
-.cm-live-editor .cm-content ::selection,
 .cm-live-editor.cm-focused .cm-selectionBackground {
   background: hsl(var(--foreground) / 0.16) !important;
 }
@@ -585,10 +584,15 @@ button {
   vertical-align: -0.14em;
 }
 
+.cm-live-properties-block {
+  margin: 0;
+  padding-bottom: 22px;
+}
+
 .cm-live-properties {
   display: grid;
   gap: 8px;
-  margin: 0 0 22px;
+  margin: 0;
   border: 1px solid hsl(var(--border));
   border-radius: 7px;
   background: hsl(var(--panel));
@@ -692,7 +696,7 @@ button {
   position: relative;
   display: table;
   width: 100%;
-  margin: 0.75em 0;
+  margin: 0;
   border: 1px solid hsl(var(--border));
   border-radius: 7px;
   background: hsl(var(--background));
@@ -1052,7 +1056,8 @@ button {
 .cm-live-embed-widget.markdown-preview {
   position: relative;
   height: auto;
-  margin: 0.85em 0;
+  margin: 0;
+  padding: 0.85em 0;
   overflow: visible;
 }
 

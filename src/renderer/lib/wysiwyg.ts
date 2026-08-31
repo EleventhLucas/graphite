@@ -216,6 +216,8 @@ class FrontmatterWidget extends WidgetType {
   }
 
   toDOM(view: EditorView) {
+    const block = document.createElement("div");
+    block.className = "cm-live-properties-block";
     const properties = document.createElement("div");
     properties.className = "cm-live-properties";
     properties.setAttribute("role", "group");
@@ -267,7 +269,8 @@ class FrontmatterWidget extends WidgetType {
       rows.append(label);
     }
     properties.append(rows);
-    return properties;
+    block.append(properties);
+    return block;
   }
 
   ignoreEvent() {
@@ -544,7 +547,7 @@ export function buildWysiwygDecorations(
         ),
       );
     } else {
-      decorations.push(Decoration.replace({}).range(frontmatter.from, frontmatter.to));
+      decorations.push(Decoration.replace({ block: true }).range(frontmatter.from, frontmatter.to));
     }
   }
 

@@ -27,3 +27,11 @@ Never store passwords, access tokens, private keys, or other secrets in either a
 - Default to quick, targeted validation.
 - Do not run history rewrites, garbage collection, packaging, or full end-to-end suites unless explicitly requested.
 - State the purpose of potentially long or destructive commands and keep their scope bounded.
+
+## CodeMirror Inline Geometry
+
+- CodeMirror block decorations and block wrappers must not use external vertical margins. Use padding inside a margin-free wrapper so the editor height map includes the full visual space.
+- Mark replacements spanning line breaks with `block: true`.
+- Call `EditorView.requestMeasure()` when an asynchronous block widget changes height; prefer a scoped `ResizeObserver` for embeds and other dynamic content.
+- Keep CodeMirror's drawn selection as the single visible selection layer. Do not also style the nested native `::selection`, which creates misleading duplicate highlights.
+- When changing Inline decorations or layout CSS, test pointer placement near the bottom of `sandbox-vault/Home.md`, after properties, tables, and embeds, because geometry errors accumulate down the document.

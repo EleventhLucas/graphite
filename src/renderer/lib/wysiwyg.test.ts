@@ -199,9 +199,9 @@ describe("Inline mode decorations", () => {
     const decorations = decorationSpecs(doc, doc.indexOf("Note"));
     expect(decorationSpecs(doc).some((item) => item.widget && item.block)).toBe(true);
     expect(decorations.some((item) => item.widget && item.block)).toBe(true);
-    expect(decorations.some((item) => item.from === 0 && item.to === doc.indexOf("\n#"))).toBe(
-      true,
-    );
+    expect(
+      decorations.some((item) => item.from === 0 && item.to === doc.indexOf("\n#") && item.block),
+    ).toBe(true);
   });
 
   it("toggles a task without moving the editing selection into its line", () => {
