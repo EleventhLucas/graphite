@@ -76,6 +76,7 @@ export default defineConfig(async ({ mode }) => {
               workbox: {
                 cleanupOutdatedCaches: true,
                 globPatterns: ["**/*.{css,html,js,png,svg,woff2}"],
+                maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
                 navigateFallback: "index.html",
               },
             }),

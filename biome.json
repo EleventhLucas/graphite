@@ -10,6 +10,7 @@
       "!**/dist",
       "!build",
       "!artifacts",
+      "!src/shared/sandbox-assets.generated.ts",
       "!node_modules"
     ]
   },

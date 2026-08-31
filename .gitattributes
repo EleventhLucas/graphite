@@ -1,4 +1,8 @@
 * text=auto eol=crlf
 *.png binary
+*.jpg binary
+*.jpeg binary
 *.ico binary
 *.pdf binary
+*.mp3 binary
+*.mp4 binary

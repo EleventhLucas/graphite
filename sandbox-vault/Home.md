@@ -38,7 +38,8 @@ const graphite = "offline";
 
 ## Embeds
 
-![[Attachments/pixel.png]]
-![[Attachments/tone.wav]]
-![[Attachments/sample.pdf]]
+![[Attachments/le-agreable.jpg]]
+![[Attachments/12th-street-rag.mp3]]
+![[Attachments/market-street-1906.mp4]]
+![[Attachments/beyond-earth-excerpt.pdf]]
 ![[Embeds/Level 1]]

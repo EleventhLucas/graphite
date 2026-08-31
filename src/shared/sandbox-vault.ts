@@ -1,3 +1,5 @@
+import { SANDBOX_ASSET_BASE64 } from "./sandbox-assets.generated";
+
 export const SANDBOX_VAULT_ID = "graphite-sandbox";
 export const SANDBOX_VAULT_NAME = "Graphite Sandbox";
 export const SANDBOX_START_NOTE = "Home.md";
@@ -25,6 +27,11 @@ function bytesFromHex(value: string): Uint8Array {
     bytes[index] = Number.parseInt(clean.slice(index * 2, index * 2 + 2), 16);
   }
   return bytes;
+}
+
+function bytesFromBase64(value: string): Uint8Array {
+  const decoded = atob(value);
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
 }
 
 function createWave(): Uint8Array {
@@ -118,9 +125,10 @@ const graphite = "offline";
 
 ## Embeds
 
-![[Attachments/pixel.png]]
-![[Attachments/tone.wav]]
-![[Attachments/sample.pdf]]
+![[Attachments/le-agreable.jpg]]
+![[Attachments/12th-street-rag.mp3]]
+![[Attachments/market-street-1906.mp4]]
+![[Attachments/beyond-earth-excerpt.pdf]]
 ![[Embeds/Level 1]]
 `),
     },
@@ -200,5 +208,9 @@ const graphite = "offline";
       path: "Attachments/unsupported-codec.mp4",
       bytes: text("not a playable media file\n"),
     },
+    ...Object.entries(SANDBOX_ASSET_BASE64).map(([path, base64]) => ({
+      path,
+      bytes: bytesFromBase64(base64),
+    })),
   ];
 }
