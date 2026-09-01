@@ -1,5 +1,11 @@
 import { defaultSchema } from "hast-util-sanitize";
-import { AlertTriangle, ExternalLink, FileQuestion, LoaderCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  ExternalLink,
+  FileQuestion,
+  LoaderCircle,
+  MoveDiagonal2,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -22,6 +28,7 @@ interface PreviewProps {
   depth?: number;
   visited?: string[];
   onOpenNote(path: string): void;
+  onOpenAttachment?(path: string, kind: VaultEntryKind): void;
 }
 
 const sanitizeSchema = {
@@ -61,7 +68,8 @@ function WikiLink({
   target,
   children,
   onOpenNote,
-}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote"> & {
+  onOpenAttachment,
+}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote" | "onOpenAttachment"> & {
   target: string;
   children: React.ReactNode;
 }) {
@@ -69,6 +77,7 @@ function WikiLink({
   const activate = async () => {
     if (resolution?.status === "resolved") {
       if (resolution.kind === "markdown") onOpenNote(resolution.path);
+      else if (onOpenAttachment) onOpenAttachment(resolution.path, resolution.kind);
       else await bridge.openAttachment(vaultId, resolution.path);
     } else if (resolution?.status === "missing") {
       onOpenNote(await bridge.createLinkedNote(vaultId, sourcePath, target));
@@ -134,17 +143,29 @@ function PdfPage({ document, pageNumber }: { document: PDFDocumentProxy; pageNum
   );
 }
 
-function PdfEmbed({ url, path }: { url: string; path: string }) {
+function PdfDocumentEmbed({
+  bytes,
+  path,
+  onRetry,
+}: {
+  bytes: Uint8Array;
+  path: string;
+  onRetry(): void;
+}) {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
     let loadingTask: PDFDocumentLoadingTask | undefined;
+    setDocument(null);
+    setError(null);
     void import("pdfjs-dist")
       .then((pdfjs) => {
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-        loadingTask = pdfjs.getDocument({ url });
+        // Passing bytes avoids asking the PDF worker to fetch an app-local blob URL.
+        // That fetch is unreliable in native webviews and delayed failures for valid PDFs.
+        loadingTask = pdfjs.getDocument({ data: bytes.slice() });
         return loadingTask.promise;
       })
       .then((pdf) => live && setDocument(pdf))
@@ -153,11 +174,24 @@ function PdfEmbed({ url, path }: { url: string; path: string }) {
       live = false;
       void loadingTask?.destroy();
     };
-  }, [url]);
+  }, [bytes]);
 
-  if (error) return <div className="pdf-page-error">{error}</div>;
+  if (error)
+    return (
+      <div className="pdf-page-error" role="alert">
+        <span>{error}</span>
+        <Button variant="ghost" onClick={onRetry}>
+          Retry preview
+        </Button>
+      </div>
+    );
   if (!document)
-    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
+    return (
+      <output className="embed-loading">
+        <LoaderCircle className="motion-safe:animate-spin" size={18} />
+        Loading PDF preview…
+      </output>
+    );
   const pages: React.ReactNode[] = [];
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
     pages.push(
@@ -175,7 +209,92 @@ function PdfEmbed({ url, path }: { url: string; path: string }) {
   );
 }
 
-function AssetEmbed({
+function PdfEmbed({ bytes, path }: { bytes: Uint8Array; path: string }) {
+  const [attempt, setAttempt] = useState(0);
+  return (
+    <PdfDocumentEmbed
+      key={attempt}
+      bytes={bytes}
+      path={path}
+      onRetry={() => setAttempt((value) => value + 1)}
+    />
+  );
+}
+
+function ResizableMedia({
+  kind,
+  url,
+  path,
+  onError,
+}: {
+  kind: "image" | "video";
+  url: string;
+  path: string;
+  onError(): void;
+}) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{ x: number; width: number } | null>(null);
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(
+    () => () => {
+      document.body.classList.remove("is-media-resizing");
+    },
+    [],
+  );
+
+  const endResize = (target: HTMLButtonElement, pointerId: number) => {
+    dragStart.current = null;
+    document.body.classList.remove("is-media-resizing");
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+  };
+
+  return (
+    <div ref={wrapperRef} className="resizable-media" style={{ width: width ?? undefined }}>
+      {kind === "image" ? (
+        <img src={url} alt={path} loading="lazy" onError={onError} />
+      ) : (
+        <video src={url} controls preload="metadata" onError={onError} />
+      )}
+      <button
+        type="button"
+        className="media-resize-handle"
+        aria-label={`Resize ${kind}`}
+        title={`Drag to resize ${kind}`}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const currentWidth = wrapperRef.current?.getBoundingClientRect().width ?? 320;
+          const maximum = wrapperRef.current?.parentElement?.clientWidth ?? currentWidth;
+          const direction = event.key === "ArrowLeft" ? -16 : 16;
+          setWidth(Math.max(160, Math.min(maximum, currentWidth + direction)));
+        }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const currentWidth = wrapperRef.current?.getBoundingClientRect().width;
+          if (!currentWidth) return;
+          dragStart.current = { x: event.clientX, width: currentWidth };
+          document.body.classList.add("is-media-resizing");
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const start = dragStart.current;
+          if (!start || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          event.preventDefault();
+          const maximum = wrapperRef.current?.parentElement?.clientWidth ?? start.width;
+          setWidth(Math.max(160, Math.min(maximum, start.width + event.clientX - start.x)));
+        }}
+        onPointerUp={(event) => endResize(event.currentTarget, event.pointerId)}
+        onPointerCancel={(event) => endResize(event.currentTarget, event.pointerId)}
+      >
+        <MoveDiagonal2 size={13} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+export function AttachmentPreview({
   vaultId,
   path,
   kind,
@@ -185,10 +304,14 @@ function AssetEmbed({
   kind: VaultEntryKind;
 }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [fallback, setFallback] = useState<string | null>(null);
   useEffect(() => {
     let objectUrl: string | null = null;
     let live = true;
+    setUrl(null);
+    setPdfBytes(null);
+    setFallback(null);
     void bridge.readAsset(vaultId, path).then((payload) => {
       if (!live) return;
       if (payload.status !== "ok") {
@@ -208,6 +331,10 @@ function AssetEmbed({
         }
         bytes = new TextEncoder().encode(sanitized);
       }
+      if (kind === "pdf") {
+        setPdfBytes(bytes);
+        return;
+      }
       objectUrl = URL.createObjectURL(new Blob([bytes], { type: payload.mimeType }));
       setUrl(objectUrl);
     });
@@ -215,7 +342,7 @@ function AssetEmbed({
       live = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [path, vaultId]);
+  }, [kind, path, vaultId]);
 
   if (fallback) {
     return (
@@ -229,8 +356,23 @@ function AssetEmbed({
     );
   }
   if (!url)
-    return <LoaderCircle className="motion-safe:animate-spin text-muted-foreground" size={18} />;
-  if (kind === "image") return <img src={url} alt={path} loading="lazy" />;
+    return pdfBytes && kind === "pdf" ? (
+      <PdfEmbed bytes={pdfBytes} path={path} />
+    ) : (
+      <output className="embed-loading">
+        <LoaderCircle className="motion-safe:animate-spin" size={18} />
+        Loading attachment…
+      </output>
+    );
+  if (kind === "image")
+    return (
+      <ResizableMedia
+        kind="image"
+        url={url}
+        path={path}
+        onError={() => setFallback("This image could not be displayed.")}
+      />
+    );
   if (kind === "audio")
     return (
       <audio
@@ -242,14 +384,13 @@ function AssetEmbed({
     );
   if (kind === "video")
     return (
-      <video
-        src={url}
-        controls
-        preload="metadata"
+      <ResizableMedia
+        kind="video"
+        url={url}
+        path={path}
         onError={() => setFallback("This video codec is not supported by the system webview.")}
       />
     );
-  if (kind === "pdf") return <PdfEmbed url={url} path={path} />;
   return null;
 }
 
@@ -260,7 +401,8 @@ function Embed({
   depth,
   visited,
   onOpenNote,
-}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote"> & {
+  onOpenAttachment,
+}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote" | "onOpenAttachment"> & {
   target: string;
   depth: number;
   visited: string[];
@@ -288,7 +430,7 @@ function Embed({
     );
   }
   if (resolution.kind !== "markdown")
-    return <AssetEmbed vaultId={vaultId} path={resolution.path} kind={resolution.kind} />;
+    return <AttachmentPreview vaultId={vaultId} path={resolution.path} kind={resolution.kind} />;
   if (depth >= 3 || visited.includes(resolution.path)) {
     return (
       <div className="embed-fallback">Nested note preview stopped to prevent an embed cycle.</div>
@@ -312,6 +454,7 @@ function Embed({
         depth={depth + 1}
         visited={[...visited, resolution.path]}
         onOpenNote={onOpenNote}
+        onOpenAttachment={onOpenAttachment}
       />
     </aside>
   );
@@ -322,7 +465,10 @@ export function MarkdownEmbed({
   sourcePath,
   target,
   onOpenNote,
-}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote"> & { target: string }) {
+  onOpenAttachment,
+}: Pick<PreviewProps, "vaultId" | "sourcePath" | "onOpenNote" | "onOpenAttachment"> & {
+  target: string;
+}) {
   return (
     <Embed
       vaultId={vaultId}
@@ -331,6 +477,7 @@ export function MarkdownEmbed({
       depth={0}
       visited={[sourcePath]}
       onOpenNote={onOpenNote}
+      onOpenAttachment={onOpenAttachment}
     />
   );
 }
@@ -342,6 +489,7 @@ export function MarkdownPreview({
   depth = 0,
   visited = [sourcePath],
   onOpenNote,
+  onOpenAttachment,
 }: PreviewProps) {
   const container = useRef<HTMLDivElement>(null);
   const plugins = useMemo(() => [remarkFrontmatter, remarkGfm, remarkWikilinks], []);
@@ -369,6 +517,7 @@ export function MarkdownPreview({
                     sourcePath={sourcePath}
                     target={decodeGraphiteUrl(href, "graphite-wiki:")}
                     onOpenNote={onOpenNote}
+                    onOpenAttachment={onOpenAttachment}
                   >
                     {children}
                   </WikiLink>
@@ -397,6 +546,7 @@ export function MarkdownPreview({
                     depth={depth}
                     visited={visited}
                     onOpenNote={onOpenNote}
+                    onOpenAttachment={onOpenAttachment}
                   />
                 );
               }

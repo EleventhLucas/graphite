@@ -134,6 +134,16 @@ describe("Inline mode decorations", () => {
     expect(checkbox?.ignoreEvent?.()).toBe(true);
   });
 
+  it("keeps a bullet marker rendered while its list item is active", () => {
+    const doc = "intro\n- First item\n- Second item";
+    const marker = doc.indexOf("- Second");
+    const decorations = decorationSpecs(doc, doc.indexOf("Second"));
+
+    expect(
+      decorations.some((item) => item.from === marker && item.to === marker + 1 && item.widget),
+    ).toBe(true);
+  });
+
   it("conceals wikilink targets when a display label is present", () => {
     const doc = "intro\nSee [[Notes/Target|friendly label]].";
     const decorations = decorationSpecs(doc);

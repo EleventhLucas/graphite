@@ -12,7 +12,7 @@ Graphite includes compact public-domain media derivatives in its user-testable s
 
 ## A Trip Down Market Street Before the Fire
 
-`sandbox-vault/Attachments/market-street-1906.mp4` is a five-second, 360p derivative of *A trip down Market Street before the fire* by the Miles Brothers (1906).
+`sandbox-vault/Attachments/market-street-1906.mp4` is a locally transcoded ten-second, 360p excerpt beginning at 4:10 in *A trip down Market Street before the fire* by the Miles Brothers (1906).
 
 - Source: [Library of Congress](https://www.loc.gov/item/00694408/)
 - Rights: Public domain and free to use and reuse

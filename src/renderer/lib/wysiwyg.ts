@@ -682,7 +682,6 @@ export function buildWysiwygDecorations(
         const line = state.doc.lineAt(node.from);
         const task = /^\s*\[[ xX]\]/.test(state.doc.sliceString(node.to, line.to));
         const marker = state.doc.sliceString(node.from, node.to).trim();
-        if (!task && selectionInside(state, line.from, line.to)) return;
         decorations.push(
           Decoration.replace(task ? {} : { widget: new ListMarkerWidget(marker) }).range(
             node.from,

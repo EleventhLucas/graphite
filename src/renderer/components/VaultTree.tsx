@@ -30,6 +30,18 @@ interface VaultTreeProps {
   onTrash(node: VaultTreeNode): void;
 }
 
+interface DragState {
+  sourcePath: string | null;
+  destination: string | null | undefined;
+  setSourcePath(path: string | null): void;
+  setDestination(path: string | null | undefined): void;
+}
+
+function parentFolder(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator === -1 ? "" : path.slice(0, separator);
+}
+
 function EntryIcon({ node, open }: { node: VaultTreeNode; open?: boolean }) {
   if (node.kind === "folder")
     return open ? (
@@ -47,10 +59,17 @@ function EntryIcon({ node, open }: { node: VaultTreeNode; open?: boolean }) {
 function TreeNode({
   node,
   depth,
+  drag,
   ...props
-}: { node: VaultTreeNode; depth: number } & Omit<VaultTreeProps, "nodes">) {
+}: { node: VaultTreeNode; depth: number; drag: DragState } & Omit<VaultTreeProps, "nodes">) {
   const [open, setOpen] = useState(depth < 1);
   const isFolder = node.kind === "folder";
+  const validDestination =
+    isFolder &&
+    Boolean(drag.sourcePath) &&
+    drag.sourcePath !== node.path &&
+    !node.path.startsWith(`${drag.sourcePath}/`) &&
+    parentFolder(drag.sourcePath ?? "") !== node.path;
   const activate = () => {
     if (isFolder) setOpen((value) => !value);
     else props.onOpen(node);
@@ -59,20 +78,42 @@ function TreeNode({
     <li>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Drag-and-drop supplements the focusable label and actions menu. */}
       <div
-        className={cn("tree-row group", props.activePath === node.path && "tree-row-active")}
+        className={cn(
+          "tree-row group",
+          props.activePath === node.path && "tree-row-active",
+          drag.sourcePath === node.path && "tree-row-dragging",
+          validDestination && drag.destination === node.path && "tree-row-drop-target",
+        )}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         draggable
-        onDragStart={(event) =>
-          event.dataTransfer.setData("application/x-graphite-path", node.path)
-        }
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-graphite-path", node.path);
+          drag.setSourcePath(node.path);
+        }}
+        onDragEnd={() => {
+          drag.setSourcePath(null);
+          drag.setDestination(undefined);
+        }}
         onDragOver={(event) => {
-          if (isFolder) event.preventDefault();
+          if (!validDestination) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          drag.setDestination(node.path);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          if (drag.destination === node.path) drag.setDestination(undefined);
         }}
         onDrop={(event) => {
-          if (!isFolder) return;
+          if (!validDestination) return;
           event.preventDefault();
+          event.stopPropagation();
           const source = event.dataTransfer.getData("application/x-graphite-path");
-          if (source && source !== node.path && !node.path.startsWith(`${source}/`)) {
+          drag.setSourcePath(null);
+          drag.setDestination(undefined);
+          if (source) {
             props.onMove({ path: source } as VaultTreeNode, node.path);
           }
         }}
@@ -122,18 +163,6 @@ function TreeNode({
               <DropdownMenu.Item className="menu-item" onSelect={() => props.onRename(node)}>
                 Rename
               </DropdownMenu.Item>
-              <DropdownMenu.Item
-                className="menu-item"
-                onSelect={() => {
-                  const destination = window.prompt(
-                    "Move to folder (vault-relative, blank for root):",
-                    "",
-                  );
-                  if (destination !== null) props.onMove(node, destination);
-                }}
-              >
-                Move…
-              </DropdownMenu.Item>
               {props.canTrash && (
                 <>
                   <DropdownMenu.Separator className="menu-separator" />
@@ -152,7 +181,7 @@ function TreeNode({
       {isFolder && open && node.children && (
         <ul>
           {node.children.map((child) => (
-            <TreeNode key={child.path} node={child} depth={depth + 1} {...props} />
+            <TreeNode key={child.path} node={child} depth={depth + 1} drag={drag} {...props} />
           ))}
         </ul>
       )}
@@ -161,10 +190,34 @@ function TreeNode({
 }
 
 export function VaultTree({ nodes, ...props }: VaultTreeProps) {
+  const [sourcePath, setSourcePath] = useState<string | null>(null);
+  const [destination, setDestination] = useState<string | null | undefined>(undefined);
+  const drag: DragState = { sourcePath, destination, setSourcePath, setDestination };
+  const rootIsValid = Boolean(sourcePath) && parentFolder(sourcePath ?? "") !== "";
   return (
-    <ul className="vault-tree" aria-label="Vault files">
+    <ul
+      className={cn("vault-tree", rootIsValid && destination === "" && "vault-tree-drop-target")}
+      aria-label="Vault files"
+      onDragOver={(event) => {
+        if (!rootIsValid || event.target !== event.currentTarget) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDestination("");
+      }}
+      onDragLeave={(event) => {
+        if (event.target === event.currentTarget && destination === "") setDestination(undefined);
+      }}
+      onDrop={(event) => {
+        if (!rootIsValid || event.target !== event.currentTarget) return;
+        event.preventDefault();
+        const source = event.dataTransfer.getData("application/x-graphite-path");
+        setSourcePath(null);
+        setDestination(undefined);
+        if (source) props.onMove({ path: source } as VaultTreeNode, "");
+      }}
+    >
       {nodes.map((node) => (
-        <TreeNode key={node.path} node={node} depth={0} {...props} />
+        <TreeNode key={node.path} node={node} depth={0} drag={drag} {...props} />
       ))}
     </ul>
   );

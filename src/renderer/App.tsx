@@ -28,6 +28,7 @@ import type {
 } from "../shared/contracts";
 import { DEFAULT_PREFERENCES } from "../shared/contracts";
 import { SANDBOX_START_NOTE } from "../shared/sandbox-vault";
+import { AttachmentDialog } from "./components/AttachmentDialog";
 import { Button } from "./components/Button";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { MarkdownEditor } from "./components/MarkdownEditor";
@@ -73,6 +74,10 @@ export default function App() {
   const [conflict, setConflict] = useState<DocumentSnapshot | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<Pick<
+    VaultTreeNode,
+    "path" | "kind"
+  > | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dark, setDark] = useState(false);
@@ -174,6 +179,7 @@ export default function App() {
     async (nextVault: VaultSummary, preferredNote?: string) => {
       if (!(await saveNow())) return;
       setBusy(true);
+      setPreviewAttachment(null);
       setVault(nextVault);
       vaultRef.current = nextVault;
       snapshotRef.current = null;
@@ -461,6 +467,7 @@ export default function App() {
     snapshotRef.current = null;
     draftRef.current = "";
     setVault(null);
+    setPreviewAttachment(null);
     setSnapshot(null);
     setDraft("");
     setTree([]);
@@ -569,15 +576,6 @@ export default function App() {
           </span>
           <Button
             variant="ghost"
-            size="icon"
-            onClick={() => setQuickOpen(true)}
-            aria-label="Quick open"
-            title="Quick open (Ctrl/Cmd+P)"
-          >
-            <Search size={16} />
-          </Button>
-          <Button
-            variant="ghost"
             className="mode-cycle-button"
             aria-label={`Mode: ${currentViewMode.label}. Switch to ${nextViewMode.label}`}
             onClick={() =>
@@ -602,12 +600,23 @@ export default function App() {
         </div>
       </header>
 
-      <div className="workspace">
+      <div
+        className={`workspace${preferences.sidebarVisible ? "" : " workspace-sidebar-collapsed"}`}
+      >
         {preferences.sidebarVisible && (
           <aside className="sidebar" style={{ width: preferences.sidebarWidth }}>
             <div className="sidebar-header">
               <span>Files</span>
               <div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setQuickOpen(true)}
+                  aria-label="Quick open"
+                  title="Quick open (Ctrl/Cmd+P)"
+                >
+                  <Search size={15} />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -647,7 +656,7 @@ export default function App() {
               onOpen={(node) =>
                 node.kind === "markdown"
                   ? void openDocument(node.path)
-                  : void bridge.openAttachment(vault.id, node.path)
+                  : setPreviewAttachment({ path: node.path, kind: node.kind })
               }
               onCreateNote={(folder) => void createNote(folder)}
               onCreateFolder={(folder) => void createFolder(folder)}
@@ -688,19 +697,29 @@ export default function App() {
               }));
             }}
             onPointerDown={(event) => {
+              event.preventDefault();
               const start = event.clientX;
               const width = preferences.sidebarWidth;
+              const handle = event.currentTarget;
+              handle.setPointerCapture(event.pointerId);
+              document.body.classList.add("is-sidebar-resizing");
               const move = (moveEvent: PointerEvent) =>
                 setPreferences((current) => ({
                   ...current,
                   sidebarWidth: Math.max(180, Math.min(480, width + moveEvent.clientX - start)),
                 }));
-              const stop = () => {
+              const stop = (stopEvent: PointerEvent) => {
                 removeEventListener("pointermove", move);
                 removeEventListener("pointerup", stop);
+                removeEventListener("pointercancel", stop);
+                document.body.classList.remove("is-sidebar-resizing");
+                if (handle.hasPointerCapture(stopEvent.pointerId)) {
+                  handle.releasePointerCapture(stopEvent.pointerId);
+                }
               };
               addEventListener("pointermove", move);
               addEventListener("pointerup", stop);
+              addEventListener("pointercancel", stop);
             }}
           />
         )}
@@ -722,6 +741,7 @@ export default function App() {
                     sourcePath={snapshot.path}
                     markdown={draft}
                     onOpenNote={(path) => void openDocument(path)}
+                    onOpenAttachment={(path, kind) => setPreviewAttachment({ path, kind })}
                   />
                 ) : (
                   <MarkdownEditor
@@ -758,6 +778,17 @@ export default function App() {
         tree={tree}
         onSelect={(path) => void openDocument(path)}
       />
+      {previewAttachment && (
+        <AttachmentDialog
+          open
+          vaultId={vault.id}
+          path={previewAttachment.path}
+          kind={previewAttachment.kind}
+          onOpenChange={(open) => {
+            if (!open) setPreviewAttachment(null);
+          }}
+        />
+      )}
       <ConflictDialog
         open={Boolean(conflict) || deleted}
         deleted={deleted}
