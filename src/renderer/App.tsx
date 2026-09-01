@@ -9,12 +9,12 @@ import {
   FolderOpen,
   FolderPlus,
   LoaderCircle,
-  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   RotateCcw,
   Search,
-  Sun,
+  Settings,
+  TriangleAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import graphiteIcon from "../../graphite_vector.svg";
@@ -34,6 +34,7 @@ import { ConflictDialog } from "./components/ConflictDialog";
 import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MarkdownPreview } from "./components/MarkdownPreview";
 import { QuickOpen } from "./components/QuickOpen";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { VaultTree } from "./components/VaultTree";
 import { bridge } from "./lib/bridge";
 
@@ -74,13 +75,14 @@ export default function App() {
   const [conflict, setConflict] = useState<DocumentSnapshot | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<Pick<
     VaultTreeNode,
     "path" | "kind"
   > | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dark, setDark] = useState(false);
+  const dark = preferences.theme === "dark";
 
   const vaultRef = useRef(vault);
   const snapshotRef = useRef(snapshot);
@@ -250,11 +252,10 @@ export default function App() {
   }, [preferences, preferencesReady]);
 
   useEffect(() => {
-    const value = preferences.theme === "dark";
-    setDark(value);
-    document.documentElement.classList.toggle("dark", value);
-    document.documentElement.style.colorScheme = value ? "dark" : "light";
-  }, [preferences.theme]);
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.dataset.theme = preferences.colorTheme;
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  }, [dark, preferences.colorTheme]);
 
   useEffect(() => {
     if (!snapshot || draft === snapshot.text || conflict || deleted) return;
@@ -454,13 +455,6 @@ export default function App() {
     }
   };
 
-  const toggleTheme = () => {
-    setPreferences((current) => ({
-      ...current,
-      theme: current.theme === "dark" ? "light" : "dark",
-    }));
-  };
-
   const showVaultSwitcher = async () => {
     if (!(await saveNow())) return;
     vaultRef.current = null;
@@ -491,18 +485,27 @@ export default function App() {
   if (!vault) {
     return (
       <main className="welcome-shell">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="welcome-settings-button"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Open settings"
+          title="Settings"
+        >
+          <Settings size={17} />
+        </Button>
         <section className="welcome-card">
           <img src={graphiteIcon} alt="" className="welcome-icon graphite-brand-icon" />
           <div>
-            <p className="eyebrow">LOCAL MARKDOWN WORKSPACE</p>
             <h1>Graphite</h1>
-            <p className="welcome-copy">
-              {capabilities.runtime === "web"
-                ? "Choose a local folder. Its contents stay on this device and are never uploaded."
-                : capabilities.runtime === "unsupported"
-                  ? "Explore the built-in sandbox, or open Graphite in a browser with local-folder access."
+            {capabilities.runtime !== "unsupported" && (
+              <p className="welcome-copy">
+                {capabilities.runtime === "web"
+                  ? "Choose a local folder. Its contents stay on this device and are never uploaded."
                   : "A quiet, focused editor for the notes already on your machine."}
-            </p>
+              </p>
+            )}
           </div>
           <div className="welcome-actions">
             <Button onClick={() => void openChosenVault()} disabled={busy}>
@@ -519,7 +522,12 @@ export default function App() {
               <FlaskConical size={16} /> Open sandbox vault
             </Button>
           </div>
-          {capabilities.limitation && <p className="capability-note">{capabilities.limitation}</p>}
+          {capabilities.limitation && (
+            <p className="capability-note">
+              <TriangleAlert size={17} aria-hidden="true" />
+              <span>{capabilities.limitation}</span>
+            </p>
+          )}
           {recentVaults.length > 0 && (
             <div className="recent-vaults">
               <span>Recent vaults</span>
@@ -544,67 +552,27 @@ export default function App() {
           )}
           {error && <p className="error-banner">{error}</p>}
         </section>
+        <SettingsDialog
+          open={settingsOpen}
+          preferences={preferences}
+          onOpenChange={setSettingsOpen}
+          onChange={setPreferences}
+        />
       </main>
     );
   }
 
   return (
     <main className="app-shell">
-      <header className="app-toolbar">
-        <div className="toolbar-vault">
-          <img src={graphiteIcon} alt="" className="graphite-brand-icon" />
-          <button className="vault-home" type="button" onClick={() => void showVaultSwitcher()}>
-            <strong>{vault.name}</strong>
-            <small>{snapshot?.path ?? "No note selected"}</small>
-          </button>
-          {vault.sandbox && (
-            <Button
-              variant="ghost"
-              className="sandbox-reset"
-              aria-label="Reset Sandbox"
-              onClick={() => void openSandboxVault(true)}
-              title="Reset Sandbox"
-            >
-              <RotateCcw size={14} /> Reset Sandbox
-            </Button>
-          )}
-        </div>
-        <div className="toolbar-actions">
-          <span className={`save-state save-${saveStatus}`}>
-            {saveIcon}
-            {saveStatus === "idle" ? "Ready" : saveStatus}
-          </span>
-          <Button
-            variant="ghost"
-            className="mode-cycle-button"
-            aria-label={`Mode: ${currentViewMode.label}. Switch to ${nextViewMode.label}`}
-            onClick={() =>
-              setPreferences((preferences) => ({
-                ...preferences,
-                primaryView: nextViewMode.value,
-              }))
-            }
-            title={`Switch to ${nextViewMode.label}`}
-          >
-            <ViewModeIcon size={16} /> {currentViewMode.label}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
-            title={`Switch to ${dark ? "light" : "dark"} theme`}
-          >
-            {dark ? <Moon size={16} /> : <Sun size={16} />}
-          </Button>
-        </div>
-      </header>
-
       <div
         className={`workspace${preferences.sidebarVisible ? "" : " workspace-sidebar-collapsed"}`}
       >
         {preferences.sidebarVisible && (
-          <aside className="sidebar" style={{ width: preferences.sidebarWidth }}>
+          <aside
+            className="sidebar"
+            style={{ width: preferences.sidebarWidth }}
+            aria-label="Vault navigation"
+          >
             <div className="sidebar-header">
               <span>Files</span>
               <div>
@@ -635,17 +603,6 @@ export default function App() {
                 >
                   <FolderPlus size={15} />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Collapse sidebar"
-                  onClick={() =>
-                    setPreferences((current) => ({ ...current, sidebarVisible: false }))
-                  }
-                  title="Collapse sidebar"
-                >
-                  <PanelLeftClose size={15} />
-                </Button>
               </div>
             </div>
             <VaultTree
@@ -664,19 +621,44 @@ export default function App() {
               onMove={(node, destination) => void moveEntry(node, destination)}
               onTrash={(node) => void trashEntry(node)}
             />
+            <footer className="sidebar-footer">
+              <div className="sidebar-vault-row">
+                <button
+                  className="sidebar-vault-home"
+                  type="button"
+                  onClick={() => void showVaultSwitcher()}
+                  title="Switch vault"
+                >
+                  <img src={graphiteIcon} alt="" className="graphite-brand-icon" />
+                  <span>
+                    <strong>{vault.name}</strong>
+                    <small>Switch vault</small>
+                  </span>
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="sidebar-settings-button"
+                  onClick={() => setSettingsOpen(true)}
+                  aria-label="Open settings"
+                  title="Settings"
+                >
+                  <Settings size={16} />
+                </Button>
+              </div>
+              {vault.sandbox && (
+                <Button
+                  variant="ghost"
+                  className="sidebar-footer-button sandbox-reset"
+                  aria-label="Reset Sandbox"
+                  onClick={() => void openSandboxVault(true)}
+                  title="Reset Sandbox"
+                >
+                  <RotateCcw size={15} /> Reset Sandbox
+                </Button>
+              )}
+            </footer>
           </aside>
-        )}
-        {!preferences.sidebarVisible && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="sidebar-restore"
-            aria-label="Show sidebar"
-            onClick={() => setPreferences((current) => ({ ...current, sidebarVisible: true }))}
-            title="Show sidebar"
-          >
-            <PanelLeftOpen size={16} />
-          </Button>
         )}
         {preferences.sidebarVisible && (
           <hr
@@ -725,6 +707,52 @@ export default function App() {
         )}
 
         <section className="document-workspace">
+          <header className="document-toolbar">
+            <div className="document-toolbar-title">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="sidebar-toggle"
+                aria-label={preferences.sidebarVisible ? "Collapse sidebar" : "Show sidebar"}
+                onClick={() =>
+                  setPreferences((current) => ({
+                    ...current,
+                    sidebarVisible: !current.sidebarVisible,
+                  }))
+                }
+                title={preferences.sidebarVisible ? "Collapse sidebar" : "Show sidebar"}
+              >
+                {preferences.sidebarVisible ? (
+                  <PanelLeftClose size={16} />
+                ) : (
+                  <PanelLeftOpen size={16} />
+                )}
+              </Button>
+              <span title={snapshot?.path}>
+                {snapshot ? documentName(snapshot.path) : "No note selected"}
+              </span>
+            </div>
+            <div className="toolbar-actions">
+              <span className={`save-state save-${saveStatus}`}>
+                {saveIcon}
+                {saveStatus === "idle" ? "Ready" : saveStatus}
+              </span>
+              <Button
+                variant="ghost"
+                className="mode-cycle-button"
+                aria-label={`Mode: ${currentViewMode.label}. Switch to ${nextViewMode.label}`}
+                onClick={() =>
+                  setPreferences((preferences) => ({
+                    ...preferences,
+                    primaryView: nextViewMode.value,
+                  }))
+                }
+                title={`Switch to ${nextViewMode.label}`}
+              >
+                <ViewModeIcon size={16} /> {currentViewMode.label}
+              </Button>
+            </div>
+          </header>
           {!snapshot ? (
             <div className="empty-document">
               <FilePlus2 size={28} />
@@ -734,7 +762,6 @@ export default function App() {
           ) : (
             <div className="document-panes">
               <section className="document-pane primary-pane">
-                <div className="pane-title">{documentName(snapshot.path)}</div>
                 {preferences.primaryView === "preview" ? (
                   <MarkdownPreview
                     vaultId={vault.id}
@@ -751,6 +778,7 @@ export default function App() {
                       setDraft(value);
                     }}
                     dark={dark}
+                    themeId={preferences.colorTheme}
                     disabled={deleted}
                     mode={preferences.primaryView}
                     vaultId={vault.id}
@@ -818,6 +846,12 @@ export default function App() {
           setDeleted(false);
           setSaveStatus("idle");
         }}
+      />
+      <SettingsDialog
+        open={settingsOpen}
+        preferences={preferences}
+        onOpenChange={setSettingsOpen}
+        onChange={setPreferences}
       />
     </main>
   );

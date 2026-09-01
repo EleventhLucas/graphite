@@ -63,12 +63,21 @@ vi.mock("../renderer/components/MarkdownPreview", () => ({
 
 import App from "../renderer/App";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.documentElement.classList.remove("dark");
+  delete document.documentElement.dataset.theme;
+});
 
 describe("Graphite renderer smoke", () => {
   it("boots the workspace and renders the sample note", async () => {
     render(<App />);
     expect(await screen.findByText("Smoke Vault")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument();
+    const settings = screen.getByRole("button", { name: "Open settings" });
+    expect(settings).not.toHaveTextContent("Settings");
+    expect(settings.closest(".sidebar-vault-row")).not.toBeNull();
+    expect(screen.getAllByText("Welcome.md")).toHaveLength(2);
     expect(await screen.findByRole("textbox", { name: "Markdown source" })).toHaveValue(
       "# Welcome to Graphite",
     );
@@ -88,14 +97,47 @@ describe("Graphite renderer smoke", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
   });
 
-  it("switches between light and dark with one click", async () => {
+  it("keeps the sidebar toggle in the document toolbar while navigation is collapsed", async () => {
     render(<App />);
-    const theme = await screen.findByRole("button", { name: "Switch to dark theme" });
-    fireEvent.click(theme);
-    expect(theme).toHaveAccessibleName("Switch to light theme");
+    await screen.findByText("Smoke Vault");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(
+      screen.queryByRole("complementary", { name: "Vault navigation" }),
+    ).not.toBeInTheDocument();
+
+    const restore = screen.getByRole("button", { name: "Show sidebar" });
+    expect(restore).toBeInTheDocument();
+    fireEvent.click(restore);
+    expect(screen.getByRole("complementary", { name: "Vault navigation" })).toBeInTheDocument();
+  });
+
+  it("changes color mode and theme from Settings", async () => {
+    render(<App />);
+    await screen.findByText("Smoke Vault");
+    const settings = screen.getByRole("button", { name: "Open settings" });
+    fireEvent.click(settings);
+
+    expect(await screen.findByRole("tab", { name: "Appearance" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      screen.queryByText("The selected theme includes coordinated light and dark palettes."),
+    ).not.toBeInTheDocument();
+    const dark = await screen.findByRole("button", { name: "Dark" });
+    const light = screen.getByRole("button", { name: "Light" });
+    expect(screen.getAllByRole("radio")).toHaveLength(9);
+    fireEvent.click(dark);
+    expect(dark).toHaveAttribute("aria-pressed", "true");
     expect(document.documentElement).toHaveClass("dark");
-    fireEvent.click(theme);
-    expect(theme).toHaveAccessibleName("Switch to dark theme");
+    fireEvent.click(light);
+    expect(light).toHaveAttribute("aria-pressed", "true");
     expect(document.documentElement).not.toHaveClass("dark");
+
+    const solarized = screen.getByRole("radio", { name: /Solarized/ });
+    fireEvent.click(solarized);
+    expect(solarized).toBeChecked();
+    expect(document.documentElement).toHaveAttribute("data-theme", "solarized");
   });
 });

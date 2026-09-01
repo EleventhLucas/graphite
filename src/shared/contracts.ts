@@ -23,6 +23,18 @@ export const SUPPORTED_EXTENSIONS = [
 export type VaultEntryKind = "folder" | "markdown" | "image" | "audio" | "video" | "pdf";
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
 export type ThemePreference = "light" | "dark";
+export const COLOR_THEMES = [
+  "default",
+  "github",
+  "things",
+  "shimmering-focus",
+  "cupertino",
+  "prism",
+  "solarized",
+  "nebula",
+  "void",
+] as const;
+export type ColorTheme = (typeof COLOR_THEMES)[number];
 export type PrimaryView = "wysiwyg" | "source" | "preview";
 export type VaultPath = string;
 type EmptyRecord = Record<never, never>;
@@ -78,6 +90,7 @@ export interface VaultChangeEvent {
 
 export interface AppPreferences {
   theme: ThemePreference;
+  colorTheme: ColorTheme;
   sidebarVisible: boolean;
   primaryView: PrimaryView;
   sidebarWidth: number;
@@ -165,6 +178,7 @@ export type GraphiteRPC = {
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "light",
+  colorTheme: "default",
   sidebarVisible: true,
   primaryView: "wysiwyg",
   sidebarWidth: 248,
@@ -191,6 +205,9 @@ export function normalizeAppPreferences(stored?: LegacyPreferences | null): AppP
 
   return {
     theme: stored?.theme === "dark" ? "dark" : "light",
+    colorTheme: COLOR_THEMES.includes(stored?.colorTheme as ColorTheme)
+      ? (stored?.colorTheme as ColorTheme)
+      : DEFAULT_PREFERENCES.colorTheme,
     sidebarVisible: stored?.sidebarVisible ?? DEFAULT_PREFERENCES.sidebarVisible,
     primaryView,
     sidebarWidth: Math.min(480, Math.max(180, stored?.sidebarWidth ?? 248)),

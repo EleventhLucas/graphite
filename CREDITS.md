@@ -37,3 +37,27 @@ Graphite includes compact public-domain media derivatives in its user-testable s
 - Rights: Public domain in the United States because the work was created solely by NASA
 
 The remaining sandbox fixtures were created specifically for Graphite.
+
+## Theme Inspirations
+
+Graphite's bundled palettes and typography are original adaptations. They do not include upstream Obsidian theme CSS, images, or other theme assets. These projects informed the visual direction and deserve a clear path back to their creators:
+
+- **GitHub:** [GitHub Theme](https://github.com/krios2146/obsidian-theme-github) by krios2146, which adapts GitHub's interface colors for Obsidian
+- **Things:** [Things](https://github.com/colineckert/obsidian-things) by Colin Eckert, inspired by Cultured Code's Things app
+- **Shimmering Focus:** [Shimmering Focus](https://github.com/chrisgrieser/shimmering-focus) by Chris Grieser
+- **Cupertino:** [Cupertino](https://github.com/aaaaalexis/obsidian-cupertino) by Alexis
+- **Prism:** [Prism](https://github.com/damiankorcz/Prism-Theme) by Damian Korcz
+- **Solarized:** [Solarized](https://github.com/altercation/solarized) by Ethan Schoonover and [Solarized for Obsidian](https://github.com/harmtemolder/obsidian-solarized) by Harm Temolder
+
+Default, Nebula, and Void are Graphite-original themes. The upstream projects listed above do not endorse or maintain Graphite.
+
+## Bundled Typefaces
+
+Graphite bundles compact Latin WOFF2 subsets through [Fontsource](https://fontsource.org/) so theme typography remains available offline. Text outside those subsets uses the platform fallback stack.
+
+- **Inter:** Copyright 2016 The Inter Project Authors
+- **iA Writer Quattro:** Copyright 2018 Information Architects Inc.; based on IBM Plex, Copyright 2017 IBM Corp.
+- **Source Sans 3:** Copyright Google Inc.; Source Sans was designed by Paul D. Hunt for Adobe
+- **JetBrains Mono:** Copyright 2020 The JetBrains Mono Project Authors
+
+All four bundled typefaces are distributed under the SIL Open Font License 1.1. Copyright notices and the full license are included in [`src/renderer/public/licenses/FONTS.txt`](src/renderer/public/licenses/FONTS.txt).

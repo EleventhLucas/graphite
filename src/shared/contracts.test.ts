@@ -30,6 +30,13 @@ describe("normalizeAppPreferences", () => {
     expect(normalizeAppPreferences({ theme: "dark" }).theme).toBe("dark");
   });
 
+  it("preserves valid color themes and replaces unknown themes", () => {
+    expect(normalizeAppPreferences({ colorTheme: "solarized" }).colorTheme).toBe("solarized");
+    expect(normalizeAppPreferences({ colorTheme: "uninstalled-theme" as never }).colorTheme).toBe(
+      "default",
+    );
+  });
+
   it("clamps the persisted sidebar width", () => {
     expect(normalizeAppPreferences({ sidebarWidth: 10 })).toMatchObject({
       sidebarWidth: 180,

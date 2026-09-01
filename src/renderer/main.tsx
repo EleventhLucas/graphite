@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "highlight.js/styles/github-dark-dimmed.css";
 import App from "./App";
+import "./fonts.css";
 import "./styles.css";
 
 const root = document.getElementById("root");
